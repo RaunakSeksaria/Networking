@@ -76,6 +76,48 @@ int recv_sham_packet(int sock_fd, struct sockaddr_in* src_addr, socklen_t* src_a
     return (int)data_len;
 }
 
+// --- Function to handle four-way FIN handshake as responder ---
+void handle_fin_handshake(int sock_fd, struct sockaddr_in* client_addr, struct sham_header* fin_header, uint32_t server_seq) {
+    struct sham_header header;
+    char data_buffer[DATA_CHUNK_SIZE];
+    socklen_t client_addr_len = sizeof(*client_addr);
+    
+    printf("Received FIN from client. Starting termination handshake...\n");
+    
+    // Step 2: Send ACK for client's FIN
+    struct sham_header fin_ack = {
+        .seq_num = server_seq,
+        .ack_num = fin_header->seq_num + 1,
+        .flags = ACK_FLAG,
+        .window_size = DATA_CHUNK_SIZE
+    };
+    send_sham_packet(sock_fd, client_addr, &fin_ack, NULL, 0);
+    print_sham_header("SND", &fin_ack);
+    printf("Acknowledged client FIN.\n");
+
+    // Step 3: Send our own FIN
+    struct sham_header server_fin = {
+        .seq_num = server_seq,
+        .ack_num = fin_header->seq_num + 1,
+        .flags = FIN_FLAG,
+        .window_size = DATA_CHUNK_SIZE
+    };
+    send_sham_packet(sock_fd, client_addr, &server_fin, NULL, 0);
+    print_sham_header("SND", &server_fin);
+    printf("Sent server FIN.\n");
+
+    // Step 4: Wait for final ACK from client
+    while (1) {
+        int ack_len = recv_sham_packet(sock_fd, client_addr, &client_addr_len, &header, data_buffer, sizeof(data_buffer));
+        if (ack_len < 0) continue;
+        print_sham_header("RCV", &header);
+        if ((header.flags & ACK_FLAG) && header.ack_num == server_seq + 1) {
+            printf("Received final ACK. Connection terminated gracefully.\n");
+            break;
+        }
+    }
+}
+
 // --- Main server logic will go here ---
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -94,9 +136,6 @@ int main(int argc, char *argv[]) {
             loss_rate = atof(argv[i]);
         }
     }
-
-    // Use port and loss_rate in your logic as needed
-    // Replace PORT with port variable below
 
     int sock_fd;
     struct sockaddr_in server_addr, client_addr;
@@ -158,74 +197,84 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // --- Data Reception Loop ---
-    FILE *fp = fopen("received_file.bin", "wb");
-    if (!fp) {
-        perror("fopen failed");
-        close(sock_fd);
-        exit(EXIT_FAILURE);
-    }
-
-    uint32_t expected_seq = header.ack_num; // Start after handshake
+    uint32_t expected_seq = header.seq_num; // Start after handshake
+    uint32_t server_seq = 1001; // Server sequence after handshake
     int connection_open = 1;
 
-    while (connection_open) {
-        int data_len = recv_sham_packet(sock_fd, &client_addr, &client_addr_len, &header, data_buffer, sizeof(data_buffer));
-        if (data_len < 0) continue;
-        print_sham_header("RCV", &header);
+    if (chat_mode) {
+        // --- Chat Mode ---
+        printf("Chat mode enabled on server. Waiting for messages...\n");
+        while (connection_open) {
+            int msg_len = recv_sham_packet(sock_fd, &client_addr, &client_addr_len, &header, data_buffer, sizeof(data_buffer));
+            if (msg_len < 0) continue;
+            print_sham_header("RCV", &header);
 
-        // Handle FIN (connection termination)
-        if (header.flags & FIN_FLAG) {
-            // Send ACK for FIN
-            struct sham_header fin_ack = {
-                .seq_num = expected_seq,
-                .ack_num = header.seq_num + 1,
+            // Handle FIN (connection termination)
+            if (header.flags & FIN_FLAG) {
+                handle_fin_handshake(sock_fd, &client_addr, &header, server_seq);
+                connection_open = 0;
+                break;
+            }
+
+            if (msg_len > 0) {
+                data_buffer[msg_len] = '\0';
+                printf("Client: %s", data_buffer);
+
+                // Echo back to client
+                struct sham_header echo_hdr = {
+                    .seq_num = server_seq,
+                    .ack_num = header.seq_num + msg_len,
+                    .flags = 0,
+                    .window_size = DATA_CHUNK_SIZE
+                };
+                send_sham_packet(sock_fd, &client_addr, &echo_hdr, data_buffer, msg_len);
+                print_sham_header("SND", &echo_hdr);
+                server_seq += msg_len;
+                expected_seq = header.seq_num + msg_len;
+            }
+        }
+    } else {
+        // --- File Transfer Mode ---
+        FILE *fp = fopen("received_file.bin", "wb");
+        if (!fp) {
+            perror("fopen failed");
+            close(sock_fd);
+            exit(EXIT_FAILURE);
+        }
+
+        while (connection_open) {
+            int data_len = recv_sham_packet(sock_fd, &client_addr, &client_addr_len, &header, data_buffer, sizeof(data_buffer));
+            if (data_len < 0) continue;
+            print_sham_header("RCV", &header);
+
+            // Handle FIN (connection termination)
+            if (header.flags & FIN_FLAG) {
+                handle_fin_handshake(sock_fd, &client_addr, &header, server_seq);
+                connection_open = 0;
+                break;
+            }
+
+            // Data packet handling
+            if (header.seq_num == expected_seq && data_len > 0) {
+                fwrite(data_buffer, 1, data_len, fp);
+                expected_seq += data_len;
+                server_seq++;
+            }
+
+            // Send cumulative ACK
+            struct sham_header ack = {
+                .seq_num = server_seq,
+                .ack_num = expected_seq,
                 .flags = ACK_FLAG,
                 .window_size = DATA_CHUNK_SIZE
             };
-            send_sham_packet(sock_fd, &client_addr, &fin_ack, NULL, 0);
-            print_sham_header("SND", &fin_ack);
-
-            // Send own FIN
-            struct sham_header server_fin = {
-                .seq_num = expected_seq,
-                .ack_num = header.seq_num + 1,
-                .flags = FIN_FLAG,
-                .window_size = DATA_CHUNK_SIZE
-            };
-            send_sham_packet(sock_fd, &client_addr, &server_fin, NULL, 0);
-            print_sham_header("SND", &server_fin);
-
-            // Wait for final ACK from client
-            while (1) {
-                int ack_len = recv_sham_packet(sock_fd, &client_addr, &client_addr_len, &header, data_buffer, sizeof(data_buffer));
-                if (ack_len < 0) continue;
-                print_sham_header("RCV", &header);
-                if (header.flags & ACK_FLAG) break;
-            }
-            printf("Connection terminated gracefully.\n");
-            connection_open = 0;
-            break;
+            send_sham_packet(sock_fd, &client_addr, &ack, NULL, 0);
+            print_sham_header("SND", &ack);
         }
 
-        // Data packet handling
-        if (header.seq_num == expected_seq && data_len > 0) {
-            fwrite(data_buffer, 1, data_len, fp);
-            expected_seq += data_len;
-        }
-
-        // Send cumulative ACK
-        struct sham_header ack = {
-            .seq_num = 0,
-            .ack_num = expected_seq,
-            .flags = ACK_FLAG,
-            .window_size = DATA_CHUNK_SIZE
-        };
-        send_sham_packet(sock_fd, &client_addr, &ack, NULL, 0);
-        print_sham_header("SND", &ack);
+        fclose(fp);
     }
 
-    fclose(fp);
     close(sock_fd);
     return 0;
 }

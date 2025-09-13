@@ -14,3 +14,5 @@ server: server.c sham.h
 
 clean:
 	rm -f client server
+
+re: clean all

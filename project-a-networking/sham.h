@@ -17,9 +17,8 @@ struct sham_header {
 #define ACK_FLAG 0x2
 #define FIN_FLAG 0x4
 
-#define PORT 12345
-#define MAX_PACKET_SIZE (sizeof(struct sham_header) + 1024)
 #define DATA_CHUNK_SIZE 1024
+#define MAX_PACKET_SIZE (sizeof(struct sham_header) + DATA_CHUNK_SIZE)
 
 void print_sham_header(const char* prefix, const struct sham_header* header);
 
@@ -29,4 +28,4 @@ int send_sham_packet(int sock_fd, const struct sockaddr_in* dest_addr,
 int recv_sham_packet(int sock_fd, struct sockaddr_in* src_addr, socklen_t* src_addr_len,
                      struct sham_header* header, void* data_buffer, size_t data_buffer_size);
 
-#endif // SHAM_H
+#endif

@@ -76,6 +76,55 @@ int recv_sham_packet(int sock_fd, struct sockaddr_in* src_addr, socklen_t* src_a
     return (int)data_len;
 }
 
+// --- Function to perform four-way FIN handshake ---
+void perform_fin_handshake(int sock_fd, struct sockaddr_in* server_addr, socklen_t server_addr_len, uint32_t seq_num) {
+    struct sham_header header;
+    char data_buffer[DATA_CHUNK_SIZE];
+    
+    // Step 1: Send FIN
+    struct sham_header fin_hdr = {
+        .seq_num = seq_num,
+        .ack_num = 0,
+        .flags = FIN_FLAG,
+        .window_size = DATA_CHUNK_SIZE
+    };
+    send_sham_packet(sock_fd, server_addr, &fin_hdr, NULL, 0);
+    print_sham_header("SND", &fin_hdr);
+    printf("Initiating connection termination...\n");
+
+    // Step 2: Wait for ACK of our FIN
+    while (1) {
+        int ack_len = recv_sham_packet(sock_fd, server_addr, &server_addr_len, &header, data_buffer, sizeof(data_buffer));
+        if (ack_len < 0) continue;
+        print_sham_header("RCV", &header);
+        if ((header.flags & ACK_FLAG) && header.ack_num == seq_num + 1) {
+            printf("Server acknowledged FIN.\n");
+            break;
+        }
+    }
+
+    // Step 3: Wait for server's FIN
+    while (1) {
+        int fin_len = recv_sham_packet(sock_fd, server_addr, &server_addr_len, &header, data_buffer, sizeof(data_buffer));
+        if (fin_len < 0) continue;
+        print_sham_header("RCV", &header);
+        if (header.flags & FIN_FLAG) {
+            printf("Received FIN from server.\n");
+            // Step 4: Send final ACK
+            struct sham_header final_ack = {
+                .seq_num = seq_num + 1,
+                .ack_num = header.seq_num + 1,
+                .flags = ACK_FLAG,
+                .window_size = DATA_CHUNK_SIZE
+            };
+            send_sham_packet(sock_fd, server_addr, &final_ack, NULL, 0);
+            print_sham_header("SND", &final_ack);
+            printf("Connection terminated gracefully.\n");
+            break;
+        }
+    }
+}
+
 // --- Main client logic will go here ---
 int main(int argc, char *argv[]) {
     int chat_mode = 0;
@@ -165,11 +214,25 @@ int main(int argc, char *argv[]) {
     // --- Data Transmission Loop ---
     if (chat_mode) {
         // --- Chat Mode ---
-        printf("Chat mode enabled. Type messages to send. Ctrl+C to exit.\n");
+        printf("Chat mode enabled. Type messages to send. Type '/quit' to exit.\n");
         while (1) {
             printf("You: ");
             fflush(stdout);
             if (!fgets(data_buffer, DATA_CHUNK_SIZE, stdin)) break;
+            
+            // Remove newline from input
+            data_buffer[strcspn(data_buffer, "\n")] = 0;
+            printf("DEBUG:: %s %d",data_buffer,strlen("/quit"));
+            // printf("")
+            // Check for quit command
+            if (strncmp(data_buffer, "/quit",5) == 0) {
+                perform_fin_handshake(sock_fd, &server_addr, server_addr_len, seq_num);
+                break;
+            }
+            // printf("DEBUG:: %s",data_buffer,strlen("\\quit"));
+            
+            // Add newline back for transmission
+            strcat(data_buffer, "\n");
 
             struct sham_header chat_hdr = {
                 .seq_num = seq_num,
@@ -179,6 +242,7 @@ int main(int argc, char *argv[]) {
             };
             send_sham_packet(sock_fd, &server_addr, &chat_hdr, data_buffer, strlen(data_buffer));
             print_sham_header("SND", &chat_hdr);
+            seq_num += strlen(data_buffer);
 
             // Wait for server reply
             int reply_len = recv_sham_packet(sock_fd, &server_addr, &server_addr_len, &header, data_buffer, sizeof(data_buffer));
@@ -201,7 +265,7 @@ int main(int argc, char *argv[]) {
 
         while (connection_open) {
             size_t bytes_read = fread(data_buffer, 1, DATA_CHUNK_SIZE, fp);
-            if (bytes_read > 0) {
+            if (bytes_read > 0 && !strncmp("\\quit",data_buffer,6)) {
                 struct sham_header data_hdr = {
                     .seq_num = seq_num,
                     .ack_num = 0,
@@ -223,42 +287,7 @@ int main(int argc, char *argv[]) {
                 }
             } else {
                 // End of file, start termination
-                struct sham_header fin_hdr = {
-                    .seq_num = seq_num,
-                    .ack_num = 0,
-                    .flags = FIN_FLAG,
-                    .window_size = DATA_CHUNK_SIZE
-                };
-                send_sham_packet(sock_fd, &server_addr, &fin_hdr, NULL, 0);
-                print_sham_header("SND", &fin_hdr);
-
-                // Wait for ACK for FIN
-                while (1) {
-                    int ack_len = recv_sham_packet(sock_fd, &server_addr, &server_addr_len, &header, data_buffer, sizeof(data_buffer));
-                    if (ack_len < 0) continue;
-                    print_sham_header("RCV", &header);
-                    if (header.flags & ACK_FLAG) break;
-                }
-
-                // Wait for server's FIN
-                while (1) {
-                    int fin_len = recv_sham_packet(sock_fd, &server_addr, &server_addr_len, &header, data_buffer, sizeof(data_buffer));
-                    if (fin_len < 0) continue;
-                    print_sham_header("RCV", &header);
-                    if (header.flags & FIN_FLAG) {
-                        // Send final ACK
-                        struct sham_header final_ack = {
-                            .seq_num = seq_num,
-                            .ack_num = header.seq_num + 1,
-                            .flags = ACK_FLAG,
-                            .window_size = DATA_CHUNK_SIZE
-                        };
-                        send_sham_packet(sock_fd, &server_addr, &final_ack, NULL, 0);
-                        print_sham_header("SND", &final_ack);
-                        break;
-                    }
-                }
-                printf("Connection terminated gracefully.\n");
+                perform_fin_handshake(sock_fd, &server_addr, server_addr_len, seq_num);
                 connection_open = 0;
             }
         }
