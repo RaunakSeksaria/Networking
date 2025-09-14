@@ -125,10 +125,27 @@ void perform_fin_handshake(int sock_fd, struct sockaddr_in* server_addr, socklen
     }
 }
 
-// --- Main client logic will go here ---
-int main(int argc, char *argv[]) {
-    int chat_mode = 0;
-    float loss_rate = 0.0;
+// --- Structures for configuration ---
+typedef struct {
+    char *server_ip;
+    int server_port;
+    char *input_file;
+    char *output_file;
+    int chat_mode;
+    float loss_rate;
+} client_config;
+
+// --- Function Declarations ---
+client_config parse_arguments(int argc, char *argv[]);
+int setup_socket(struct sockaddr_in *server_addr, client_config cfg);
+uint32_t perform_handshake(int sock_fd, struct sockaddr_in *server_addr, socklen_t *addr_len);
+void chat_mode_loop(int sock_fd, struct sockaddr_in *server_addr, socklen_t addr_len, uint32_t seq_num);
+void file_transfer_mode(int sock_fd, struct sockaddr_in *server_addr, socklen_t addr_len, client_config cfg, uint32_t seq_num);
+
+
+// --- Argument Parsing ---
+client_config parse_arguments(int argc, char *argv[]) {
+    client_config cfg = {0};
 
     if (argc < 4) {
         fprintf(stderr,
@@ -136,163 +153,174 @@ int main(int argc, char *argv[]) {
             "File Transfer: %s <server_ip> <server_port> <input_file> <output_file_name> [loss_rate]\n"
             "Chat Mode:     %s <server_ip> <server_port> --chat [loss_rate]\n",
             argv[0], argv[0]);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
-    char *server_ip = argv[1];
-    int server_port = atoi(argv[2]);
-    char *input_file = NULL;
-    char *output_file = NULL;
+    cfg.server_ip = argv[1];
+    cfg.server_port = atoi(argv[2]);
 
     if (strcmp(argv[3], "--chat") == 0) {
-        chat_mode = 1;
-        if (argc == 5) loss_rate = atof(argv[4]);
+        cfg.chat_mode = 1;
+        if (argc == 5) cfg.loss_rate = atof(argv[4]);
     } else {
-        input_file = argv[3];
-        output_file = argv[4];
-        if (argc == 6) loss_rate = atof(argv[5]);
+        cfg.input_file = argv[3];
+        cfg.output_file = argv[4];
+        if (argc == 6) cfg.loss_rate = atof(argv[5]);
     }
 
-    // Use server_ip, server_port, input_file, output_file, chat_mode, loss_rate as needed
+    return cfg;
+}
 
-    int sock_fd;
-    struct sockaddr_in server_addr;
-    socklen_t server_addr_len = sizeof(server_addr);
-
-    // Create UDP socket
-    sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
+// --- Socket Setup ---
+int setup_socket(struct sockaddr_in *server_addr, client_config cfg) {
+    int sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock_fd < 0) {
         perror("socket failed");
         exit(EXIT_FAILURE);
     }
 
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(server_port);
-    server_addr.sin_addr.s_addr = inet_addr(server_ip);
+    memset(server_addr, 0, sizeof(*server_addr));
+    server_addr->sin_family = AF_INET;
+    server_addr->sin_port = htons(cfg.server_port);
+    server_addr->sin_addr.s_addr = inet_addr(cfg.server_ip);
 
-    printf("Client connecting to %s:%d... Chat mode: %s, Loss rate: %.2f\n", server_ip, server_port, chat_mode ? "ON" : "OFF", loss_rate);
+    return sock_fd;
+}
 
-    // --- Connection Establishment (Three-Way Handshake) ---
-    // Send SYN
+// --- Handshake ---
+uint32_t perform_handshake(int sock_fd, struct sockaddr_in *server_addr, socklen_t *addr_len) {
     struct sham_header syn = {
-        .seq_num = 500, // Client initial seq num
+        .seq_num = 500,
         .ack_num = 0,
         .flags = SYN_FLAG,
         .window_size = DATA_CHUNK_SIZE
     };
-    send_sham_packet(sock_fd, &server_addr, &syn, NULL, 0);
+    send_sham_packet(sock_fd, server_addr, &syn, NULL, 0);
     print_sham_header("SND", &syn);
 
-    // Declare header and data_buffer for handshake and data transfer
     struct sham_header header;
-    char data_buffer[DATA_CHUNK_SIZE];
+    char buffer[DATA_CHUNK_SIZE];
 
-    uint32_t seq_num = syn.seq_num + 1; // Initialize sequence number after SYN
-
-    // Wait for SYN+ACK
     while (1) {
-        int data_len = recv_sham_packet(sock_fd, &server_addr, &server_addr_len, &header, data_buffer, sizeof(data_buffer));
-        if (data_len < 0) continue;
+        int len = recv_sham_packet(sock_fd, server_addr, addr_len, &header, buffer, sizeof(buffer));
+        if (len < 0) continue;
         print_sham_header("RCV", &header);
         if ((header.flags & SYN_FLAG) && (header.flags & ACK_FLAG)) {
-            // Send ACK to complete handshake
             struct sham_header ack = {
                 .seq_num = syn.seq_num + 1,
                 .ack_num = header.seq_num + 1,
                 .flags = ACK_FLAG,
                 .window_size = DATA_CHUNK_SIZE
             };
-            send_sham_packet(sock_fd, &server_addr, &ack, NULL, 0);
+            send_sham_packet(sock_fd, server_addr, &ack, NULL, 0);
             print_sham_header("SND", &ack);
-            break;
+            return syn.seq_num + 1;
         }
     }
+}
 
-    printf("Connection established!\n");
+// --- Chat Mode ---
+void chat_mode_loop(int sock_fd, struct sockaddr_in *server_addr, socklen_t addr_len, uint32_t seq_num) {
+    char buffer[DATA_CHUNK_SIZE];
+    struct sham_header header;
 
-    // --- Data Transmission Loop ---
-    if (chat_mode) {
-        // --- Chat Mode ---
-        printf("Chat mode enabled. Type messages to send. Type '/quit' to exit.\n");
-        while (1) {
-            printf("You: ");
-            fflush(stdout);
-            if (!fgets(data_buffer, DATA_CHUNK_SIZE, stdin)) break;
-            
-            // Remove newline from input
-            data_buffer[strcspn(data_buffer, "\n")] = 0;
-            printf("DEBUG:: %s %d",data_buffer,strlen("/quit"));
-            // printf("")
-            // Check for quit command
-            if (strncmp(data_buffer, "/quit",5) == 0) {
-                perform_fin_handshake(sock_fd, &server_addr, server_addr_len, seq_num);
-                break;
-            }
-            // printf("DEBUG:: %s",data_buffer,strlen("\\quit"));
-            
-            // Add newline back for transmission
-            strcat(data_buffer, "\n");
+    printf("Chat mode enabled. Type messages to send. Type '/quit' to exit.\n");
 
-            struct sham_header chat_hdr = {
+    while (1) {
+        printf("You: ");
+        fflush(stdout);
+        if (!fgets(buffer, DATA_CHUNK_SIZE, stdin)) break;
+
+        buffer[strcspn(buffer, "\n")] = 0;
+        if (strncmp(buffer, "/quit", 5) == 0) {
+            perform_fin_handshake(sock_fd, server_addr, addr_len, seq_num);
+            break;
+        }
+
+        strcat(buffer, "\n");
+        struct sham_header chat_hdr = {
+            .seq_num = seq_num,
+            .ack_num = 0,
+            .flags = 0,
+            .window_size = DATA_CHUNK_SIZE
+        };
+        send_sham_packet(sock_fd, server_addr, &chat_hdr, buffer, strlen(buffer));
+        print_sham_header("SND", &chat_hdr);
+        seq_num += strlen(buffer);
+
+        int reply_len = recv_sham_packet(sock_fd, server_addr, &addr_len, &header, buffer, sizeof(buffer));
+        if (reply_len > 0) {
+            buffer[reply_len] = '\0';
+            printf("Server: %s", buffer);
+        }
+    }
+}
+
+// --- File Transfer Mode ---
+void file_transfer_mode(int sock_fd, struct sockaddr_in *server_addr, socklen_t addr_len, client_config cfg, uint32_t seq_num) {
+    FILE *fp = fopen(cfg.input_file, "rb");
+    if (!fp) {
+        perror("fopen failed");
+        close(sock_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    struct sham_header header;
+    char buffer[DATA_CHUNK_SIZE];
+    int connection_open = 1;
+
+    while (connection_open) {
+        size_t bytes_read = fread(buffer, 1, DATA_CHUNK_SIZE, fp);
+        if (bytes_read > 0) {
+            struct sham_header data_hdr = {
                 .seq_num = seq_num,
                 .ack_num = 0,
                 .flags = 0,
                 .window_size = DATA_CHUNK_SIZE
             };
-            send_sham_packet(sock_fd, &server_addr, &chat_hdr, data_buffer, strlen(data_buffer));
-            print_sham_header("SND", &chat_hdr);
-            seq_num += strlen(data_buffer);
+            send_sham_packet(sock_fd, server_addr, &data_hdr, buffer, bytes_read);
+            print_sham_header("SND", &data_hdr);
 
-            // Wait for server reply
-            int reply_len = recv_sham_packet(sock_fd, &server_addr, &server_addr_len, &header, data_buffer, sizeof(data_buffer));
-            if (reply_len > 0) {
-                data_buffer[reply_len] = '\0';
-                printf("Server: %s", data_buffer);
-            }
-        }
-    } else {
-        // --- File Transfer Mode ---
-        FILE *fp = fopen(input_file, "rb");
-        if (!fp) {
-            perror("fopen failed");
-            close(sock_fd);
-            exit(EXIT_FAILURE);
-        }
-
-        uint32_t seq_num = syn.seq_num + 1; // Initialize sequence number after SYN
-        int connection_open = 1;
-
-        while (connection_open) {
-            size_t bytes_read = fread(data_buffer, 1, DATA_CHUNK_SIZE, fp);
-            if (bytes_read > 0 && !strncmp("\\quit",data_buffer,6)) {
-                struct sham_header data_hdr = {
-                    .seq_num = seq_num,
-                    .ack_num = 0,
-                    .flags = 0,
-                    .window_size = DATA_CHUNK_SIZE
-                };
-                send_sham_packet(sock_fd, &server_addr, &data_hdr, data_buffer, bytes_read);
-                print_sham_header("SND", &data_hdr);
-
-                // Wait for ACK
-                while (1) {
-                    int ack_len = recv_sham_packet(sock_fd, &server_addr, &server_addr_len, &header, data_buffer, sizeof(data_buffer));
-                    if (ack_len < 0) continue;
-                    print_sham_header("RCV", &header);
-                    if ((header.flags & ACK_FLAG) && header.ack_num >= seq_num + bytes_read) {
-                        seq_num = header.ack_num;
-                        break;
-                    }
+            while (1) {
+                int ack_len = recv_sham_packet(sock_fd, server_addr, &addr_len, &header, buffer, sizeof(buffer));
+                if (ack_len < 0) continue;
+                print_sham_header("RCV", &header);
+                if ((header.flags & ACK_FLAG) && header.ack_num >= seq_num + bytes_read) {
+                    seq_num = header.ack_num;
+                    break;
                 }
-            } else {
-                // End of file, start termination
-                perform_fin_handshake(sock_fd, &server_addr, server_addr_len, seq_num);
-                connection_open = 0;
             }
+        } else {
+            perform_fin_handshake(sock_fd, server_addr, addr_len, seq_num);
+            connection_open = 0;
         }
+    }
 
-        fclose(fp);
+    fclose(fp);
+}
+
+
+
+// --- Main Function ---
+int main(int argc, char *argv[]) {
+    client_config cfg = parse_arguments(argc, argv);
+
+    struct sockaddr_in server_addr;
+    socklen_t server_addr_len = sizeof(server_addr);
+    int sock_fd = setup_socket(&server_addr, cfg);
+
+    printf("Client connecting to %s:%d... Chat mode: %s, Loss rate: %.2f\n",
+           cfg.server_ip, cfg.server_port, cfg.chat_mode ? "ON" : "OFF", cfg.loss_rate);
+
+    // Perform 3-way handshake
+    uint32_t seq_num = perform_handshake(sock_fd, &server_addr, &server_addr_len);
+    printf("Connection established!\n");
+
+    // Run mode
+    if (cfg.chat_mode) {
+        chat_mode_loop(sock_fd, &server_addr, server_addr_len, seq_num);
+    } else {
+        file_transfer_mode(sock_fd, &server_addr, server_addr_len, cfg, seq_num);
     }
 
     close(sock_fd);
