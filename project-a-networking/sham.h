@@ -1,3 +1,5 @@
+// ############## LLM Generated Code Begins ##############
+
 #ifndef SHAM_H
 #define SHAM_H
 
