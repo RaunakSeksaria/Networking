@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <sys/select.h>
 
 // --- Helper function to print header details ---
 void print_sham_header(const char* prefix, const struct sham_header* header) {
@@ -215,42 +216,68 @@ void perform_handshake(int sock_fd, struct sockaddr_in *client_addr, socklen_t *
     }
 }
 
-// --- Chat Mode ---
-void chat_mode_loop(int sock_fd, struct sockaddr_in *client_addr, socklen_t client_addr_len, uint32_t *server_seq, uint32_t *expected_seq) {
+void chat_loop(int sock_fd, struct sockaddr_in *peer_addr, socklen_t peer_len,
+               uint32_t *seq_num) {
+    fd_set fds;
+    char data_buffer[DATA_CHUNK_SIZE];
     struct sham_header header;
-    char buffer[DATA_CHUNK_SIZE];
-    int connection_open = 1;
 
-    printf("Chat mode enabled on server. Waiting for messages...\n");
-    while (connection_open) {
-        int msg_len = recv_sham_packet(sock_fd, client_addr, &client_addr_len, &header, buffer, sizeof(buffer));
-        if (msg_len < 0) continue;
-        print_sham_header("RCV", &header);
+    printf("Chat mode enabled. Type messages to send. Type '/quit' to exit.\n");
 
-        if (header.flags & FIN_FLAG) {
-            handle_fin_handshake(sock_fd, client_addr, &header, *server_seq);
-            connection_open = 0;
+    while (1) {
+        FD_ZERO(&fds);
+        FD_SET(STDIN_FILENO, &fds);
+        FD_SET(sock_fd, &fds);
+        int max_fd = (sock_fd > STDIN_FILENO ? sock_fd : STDIN_FILENO) + 1;
+
+        if (select(max_fd, &fds, NULL, NULL, NULL) < 0) {
+            perror("select failed");
             break;
         }
 
-        if (msg_len > 0) {
-            buffer[msg_len] = '\0';
-            printf("Client: %s", buffer);
+        // ---- User typed something ----
+        if (FD_ISSET(STDIN_FILENO, &fds)) {
+            if (!fgets(data_buffer, sizeof(data_buffer), stdin)) break;
+            data_buffer[strcspn(data_buffer, "\n")] = 0; // strip newline
 
-            struct sham_header echo_hdr = {
-                .seq_num = *server_seq,
-                .ack_num = header.seq_num + msg_len,
+            if (strncmp(data_buffer, "/quit", 5) == 0) {
+                perform_fin_handshake(sock_fd, peer_addr, peer_len, *seq_num);
+                break;
+            }
+
+            strcat(data_buffer, "\n"); // restore newline for sending
+
+            struct sham_header chat_hdr = {
+                .seq_num = *seq_num,
+                .ack_num = 0,
                 .flags = 0,
                 .window_size = DATA_CHUNK_SIZE
             };
-            send_sham_packet(sock_fd, client_addr, &echo_hdr, buffer, msg_len);
-            print_sham_header("SND", &echo_hdr);
 
-            *server_seq += msg_len;
-            *expected_seq = header.seq_num + msg_len;
+            send_sham_packet(sock_fd, peer_addr, &chat_hdr,
+                             data_buffer, strlen(data_buffer));
+            print_sham_header("SND", &chat_hdr);
+            *seq_num += strlen(data_buffer);
+        }
+
+        // ---- Incoming message from peer ----
+        if (FD_ISSET(sock_fd, &fds)) {
+            int msg_len = recv_sham_packet(sock_fd, peer_addr, &peer_len,
+                                           &header, data_buffer, sizeof(data_buffer));
+            if (msg_len > 0) {
+                data_buffer[msg_len] = '\0';
+
+                if (header.flags & FIN_FLAG) {
+                    handle_fin_handshake(sock_fd, peer_addr, &header, *seq_num);
+                    break;
+                }
+
+                printf("Peer: %s", data_buffer);
+            }
         }
     }
 }
+
 
 // --- File Transfer Mode ---
 void file_transfer_mode(int sock_fd, struct sockaddr_in *client_addr, socklen_t client_addr_len, uint32_t *server_seq, uint32_t *expected_seq) {
