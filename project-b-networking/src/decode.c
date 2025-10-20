@@ -416,6 +416,122 @@ void decode_packet_detailed(const struct pcap_pkthdr *pkthdr, const unsigned cha
             }
         }
         
+    } else if (ether_type == ETHERTYPE_IPV6) {
+        const unsigned char *ip_pkt = packet + sizeof(struct ether_header);
+        int ip_len = pkthdr->caplen - sizeof(struct ether_header);
+
+        if (ip_len < (int)sizeof(struct ip6_hdr)) {
+            printf("ERROR: Packet too short for IPv6 header\n");
+            return;
+        }
+
+        const struct ip6_hdr *ip6 = (const struct ip6_hdr *)ip_pkt;
+        char src_buf[INET6_ADDRSTRLEN], dst_buf[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &ip6->ip6_src, src_buf, sizeof(src_buf));
+        inet_ntop(AF_INET6, &ip6->ip6_dst, dst_buf, sizeof(dst_buf));
+        uint32_t flow = ntohl(ip6->ip6_flow);
+
+        printf("================================================================================\n");
+        printf("LAYER 3 - IPv6 HEADER\n");
+        printf("================================================================================\n");
+        printf("  Version:          %u\n", (flow >> 28) & 0xF);
+        printf("  Traffic Class:    %u\n", (flow >> 20) & 0xFF);
+        printf("  Flow Label:       0x%05X\n", flow & 0xFFFFF);
+        printf("  Payload Length:   %u bytes\n", ntohs(ip6->ip6_plen));
+        printf("  Next Header:      %u\n", ip6->ip6_nxt);
+        printf("  Hop Limit:        %u\n", ip6->ip6_hlim);
+        printf("  Source IP:        %s\n", src_buf);
+        printf("  Destination IP:   %s\n\n", dst_buf);
+
+        // Layer 4 for common next headers (no extension header walk)
+        const unsigned char *trans = ip_pkt + sizeof(struct ip6_hdr);
+        int trans_len = ip_len - sizeof(struct ip6_hdr);
+
+        if (ip6->ip6_nxt == IPPROTO_TCP && trans_len >= 20) {
+            uint16_t src_port = read_u16(trans);
+            uint16_t dst_port = read_u16(trans + 2);
+            uint32_t seq = read_u32(trans + 4);
+            uint32_t ack = read_u32(trans + 8);
+            uint8_t data_offset = (trans[12] >> 4) * 4;
+            uint8_t flagsb = trans[13];
+            uint16_t window = read_u16(trans + 14);
+            uint16_t checksum = read_u16(trans + 16);
+
+            printf("================================================================================\n");
+            printf("LAYER 4 - TCP SEGMENT (IPv6)\n");
+            printf("================================================================================\n");
+            printf("  Source Port:      %u\n", src_port);
+            printf("  Destination Port: %u\n", dst_port);
+            printf("  Sequence Number:  %u\n", seq);
+            printf("  Acknowledgment:   %u\n", ack);
+            printf("  Data Offset:      %u (%u bytes)\n", trans[12] >> 4, data_offset);
+            printf("  Flags:            0x%02X [", flagsb);
+            if (flagsb & 0x01) printf("FIN ");
+            if (flagsb & 0x02) printf("SYN ");
+            if (flagsb & 0x04) printf("RST ");
+            if (flagsb & 0x08) printf("PSH ");
+            if (flagsb & 0x10) printf("ACK ");
+            if (flagsb & 0x20) printf("URG");
+            printf("]\n");
+            printf("  Window Size:      %u\n", window);
+            printf("  Checksum:         0x%04X\n\n", checksum);
+
+            printf("  Raw TCP Header (%u bytes):\n  ", data_offset);
+            for (int i = 0; i < data_offset && i < trans_len; i++) {
+                printf("%02X ", trans[i]);
+                if ((i + 1) % 16 == 0 && i + 1 < data_offset) printf("\n  ");
+            }
+            printf("\n\n");
+
+            int payload_len = trans_len - data_offset;
+            if (payload_len > 0) {
+                printf("================================================================================\n");
+                printf("LAYER 7 - APPLICATION DATA\n");
+                printf("================================================================================\n");
+                printf("  Payload Length: %d bytes\n", payload_len);
+                printf("  Protocol: ");
+                if (src_port == 80 || dst_port == 80) printf("HTTP\n");
+                else if (src_port == 443 || dst_port == 443) printf("HTTPS/TLS\n");
+                else if (src_port == 53 || dst_port == 53) printf("DNS\n");
+                else printf("Unknown\n");
+                printf("\n  Payload Data:\n");
+                print_full_hex_dump(trans + data_offset, payload_len);
+            }
+
+        } else if (ip6->ip6_nxt == IPPROTO_UDP && trans_len >= 8) {
+            uint16_t src_port = read_u16(trans);
+            uint16_t dst_port = read_u16(trans + 2);
+            uint16_t udplen = read_u16(trans + 4);
+            uint16_t checksum = read_u16(trans + 6);
+
+            printf("================================================================================\n");
+            printf("LAYER 4 - UDP DATAGRAM (IPv6)\n");
+            printf("================================================================================\n");
+            printf("  Source Port:      %u\n", src_port);
+            printf("  Destination Port: %u\n", dst_port);
+            printf("  Length:           %u bytes\n", udplen);
+            printf("  Checksum:         0x%04X\n\n", checksum);
+
+            printf("  Raw UDP Header (8 bytes):\n  ");
+            for (int i = 0; i < 8; i++) {
+                printf("%02X ", trans[i]);
+            }
+            printf("\n\n");
+
+            int payload_len = trans_len - 8;
+            if (payload_len > 0) {
+                printf("================================================================================\n");
+                printf("LAYER 7 - APPLICATION DATA\n");
+                printf("================================================================================\n");
+                printf("  Payload Length: %d bytes\n", payload_len);
+                printf("  Protocol: ");
+                if (src_port == 53 || dst_port == 53) printf("DNS\n");
+                else printf("Unknown\n");
+                printf("\n  Payload Data:\n");
+                print_full_hex_dump(trans + 8, payload_len);
+            }
+        }
+
     } else if (ether_type == ETHERTYPE_ARP) {
         const unsigned char *arp_pkt = packet + sizeof(struct ether_header);
         int rem = pkthdr->caplen - sizeof(struct ether_header);
