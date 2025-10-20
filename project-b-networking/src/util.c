@@ -57,6 +57,35 @@ void print_hex_dump(const unsigned char *data, int len) {
     }
 }
 
+void print_full_hex_dump(const unsigned char *data, int len) {
+    printf("Full Packet Hex Dump (%d bytes):\n", len);
+    printf("Offset   00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F   ASCII\n");
+    printf("------   -----------------------------------------------   ----------------\n");
+    
+    for (int i = 0; i < len; i += 16) {
+        printf("%06X   ", i);
+        
+        // Print hex values
+        for (int j = 0; j < 16; j++) {
+            if (i + j < len) {
+                printf("%02X ", data[i + j]);
+            } else {
+                printf("   ");
+            }
+        }
+        
+        printf("  ");
+        
+        // Print ASCII representation
+        for (int j = 0; j < 16 && (i + j) < len; j++) {
+            unsigned char c = data[i + j];
+            printf("%c", (c >= 32 && c <= 126) ? c : '.');
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
 void format_mac(const unsigned char *mac, char *buf, size_t buflen) {
     if (!mac || !buf) return;
     snprintf(buf, buflen, "%02X:%02X:%02X:%02X:%02X:%02X",

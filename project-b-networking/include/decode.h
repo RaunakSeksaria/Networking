@@ -3,6 +3,7 @@
 
 #include <pcap.h>
 
-void decode_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet);
+void decode_packet(unsigned char *user, const struct pcap_pkthdr *pkthdr, const unsigned char *packet);
+void decode_packet_detailed(const struct pcap_pkthdr *pkthdr, const unsigned char *packet, unsigned int packet_id);
 
 #endif // DECODE_H
