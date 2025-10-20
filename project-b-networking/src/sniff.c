@@ -1,5 +1,6 @@
 #include "../include/sniff.h"
 #include "../include/decode.h"
+#include "../include/session.h"
 #include <pcap.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +17,15 @@ static void sigint_handler(int sig) {
     (void)sig;
     stop_flag = 1;
     if (g_handle) pcap_breakloop(g_handle);
+}
+
+// Wrapper callback that stores packets and decodes them
+static void packet_handler_with_storage(unsigned char *user, const struct pcap_pkthdr *pkthdr, const unsigned char *packet) {
+    // Store packet in session
+    session_add_packet(packet, pkthdr->caplen, pkthdr->ts);
+    
+    // Decode and display packet
+    decode_packet(user, pkthdr, packet);
 }
 
 static int sniff_loop(pcap_t *handle, const char *dev_name) {
@@ -56,11 +66,12 @@ static int sniff_loop(pcap_t *handle, const char *dev_name) {
                 printf("\n[C-Shark] EOF detected, exiting.\n");
                 fcntl(STDIN_FILENO, F_SETFL, stdin_flags);
                 pcap_close(handle);
+                session_cleanup();
                 exit(0);
             }
         }
         if (FD_ISSET(pcap_fd, &readfds)) {
-            pcap_dispatch(handle, -1, decode_packet, NULL);
+            pcap_dispatch(handle, -1, packet_handler_with_storage, NULL);
         }
     }
 
@@ -69,11 +80,16 @@ static int sniff_loop(pcap_t *handle, const char *dev_name) {
 
     g_handle = NULL;
     printf("\n[C-Shark] Capture stopped.\n");
+    session_print_summary();
     return 0;
 }
 
 int start_sniff(const char *dev_name) {
     char errbuf[PCAP_ERRBUF_SIZE];
+    
+    // Start new session
+    session_start_new(dev_name, NULL);
+    
     pcap_t *handle = pcap_open_live(dev_name, BUFSIZ, 1, 1000, errbuf);
     if (!handle) {
         fprintf(stderr, "Couldn't open device %s: %s\n", dev_name, errbuf);
@@ -93,6 +109,10 @@ int start_sniff(const char *dev_name) {
 
 int start_sniff_filtered(const char *dev_name, const char *filter) {
     char errbuf[PCAP_ERRBUF_SIZE];
+    
+    // Start new session with filter
+    session_start_new(dev_name, filter);
+    
     pcap_t *handle = pcap_open_live(dev_name, BUFSIZ, 1, 1000, errbuf);
     if (!handle) {
         fprintf(stderr, "Couldn't open device %s: %s\n", dev_name, errbuf);

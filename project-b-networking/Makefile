@@ -4,7 +4,7 @@ LDFLAGS = -lpcap
 
 SRCDIR = src
 INCDIR = include
-OBJ = $(SRCDIR)/main.o $(SRCDIR)/sniff.o $(SRCDIR)/decode.o $(SRCDIR)/util.o
+OBJ = $(SRCDIR)/main.o $(SRCDIR)/sniff.o $(SRCDIR)/decode.o $(SRCDIR)/util.o $(SRCDIR)/session.o
 
 TARGET = cshark
 

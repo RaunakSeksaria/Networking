@@ -4,13 +4,20 @@
 #include <pcap.h>
 #include "../include/util.h"
 #include "../include/sniff.h"
+#include "../include/session.h"
 
 int main() {
+    // Initialize session management
+    session_init();
+    
     printf("[C-Shark] The Command-Line Packet Predator\n");
     printf("==============================================\n");
 
     int num = list_devices();
-    if (num <= 0) return 1;
+    if (num <= 0) {
+        session_cleanup();
+        return 1;
+    }
 
     printf("\nSelect an interface to sniff (1-%d): ", num);
     fflush(stdout);
@@ -18,9 +25,11 @@ int main() {
     if (scanf("%d", &choice) != 1) {
         if (feof(stdin)) {
             printf("\n[C-Shark] Exiting...\n");
+            session_cleanup();
             return 0;
         }
         fprintf(stderr, "Invalid selection.\n");
+        session_cleanup();
         return 1;
     }
     
@@ -33,6 +42,7 @@ int main() {
     char errbuf[PCAP_ERRBUF_SIZE];
     if (pcap_findalldevs(&alldevs, errbuf) == -1) {
         fprintf(stderr, "pcap_findalldevs: %s\n", errbuf);
+        session_cleanup();
         return 1;
     }
     int i = 0;
@@ -45,13 +55,17 @@ int main() {
         }
     }
     pcap_freealldevs(alldevs);
-    if (!dev_name) { fprintf(stderr, "Invalid device selection\n"); return 1; }
+    if (!dev_name) { 
+        fprintf(stderr, "Invalid device selection\n");
+        session_cleanup();
+        return 1;
+    }
 
     while (1) {
         printf("\n[C-Shark] Interface '%s' selected. What's next?\n\n", dev_name);
         printf("1. Start Sniffing (All Packets)\n");
         printf("2. Start Sniffing (With Filters)\n");
-        printf("3. Inspect Last Session <-- To be implemented later\n");
+        printf("3. Inspect Last Session\n");
         printf("4. Exit C-Shark\n");
         printf("Enter your choice: ");
         fflush(stdout);
@@ -60,7 +74,12 @@ int main() {
         if (scanf("%d", &menu_choice) != 1) {
             int c;
             while ((c = getchar()) != '\n' && c != EOF);
-            if (feof(stdin)) { printf("\n[C-Shark] Exiting...\n"); free(dev_name); return 0; }
+            if (feof(stdin)) { 
+                printf("\n[C-Shark] Exiting...\n");
+                free(dev_name);
+                session_cleanup();
+                return 0;
+            }
             printf("Invalid input. Please enter a number.\n");
             continue;
         }
@@ -122,11 +141,12 @@ int main() {
                 break;
             }
             case 3:
-                printf("This feature is not yet implemented.\n");
+                session_inspect();
                 break;
             case 4:
                 printf("[C-Shark] Exiting...\n");
                 free(dev_name);
+                session_cleanup();
                 return 0;
             default:
                 printf("Invalid choice. Please try again.\n");
@@ -135,5 +155,6 @@ int main() {
     }
 
     free(dev_name);
+    session_cleanup();
     return 0;
 }
