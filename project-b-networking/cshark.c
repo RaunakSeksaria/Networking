@@ -108,6 +108,82 @@ void packet_handler(unsigned char *user, const struct pcap_pkthdr *pkthdr, const
                 if (flags == 0) printf("None");
                 printf("\n");
 
+                // Layer 4 - Transport Layer
+                int ip_header_len = ip_header->ihl * 4;
+                const unsigned char *transport_packet = ip_packet + ip_header_len;
+                int transport_remaining = remaining_len - ip_header_len;
+
+                if (ip_header->protocol == IPPROTO_TCP && transport_remaining >= 20) {
+                    // Manual TCP header parsing for portability
+                    const unsigned char *tcp_data = transport_packet;
+
+                    uint16_t src_port = ntohs(*(uint16_t *)(tcp_data));
+                    uint16_t dst_port = ntohs(*(uint16_t *)(tcp_data + 2));
+                    uint32_t seq = ntohl(*(uint32_t *)(tcp_data + 4));
+                    uint32_t ack_seq = ntohl(*(uint32_t *)(tcp_data + 8));
+                    uint8_t data_offset = (tcp_data[12] >> 4) * 4;
+                    uint8_t flags = tcp_data[13];
+                    uint16_t window = ntohs(*(uint16_t *)(tcp_data + 14));
+                    uint16_t checksum = ntohs(*(uint16_t *)(tcp_data + 16));
+
+                    // Identify common ports
+                    const char *src_service = "";
+                    const char *dst_service = "";
+                    if (src_port == 80) src_service = " (HTTP)";
+                    else if (src_port == 443) src_service = " (HTTPS)";
+                    else if (src_port == 53) src_service = " (DNS)";
+                    else if (src_port == 22) src_service = " (SSH)";
+                    else if (src_port == 21) src_service = " (FTP)";
+                    else if (src_port == 25) src_service = " (SMTP)";
+
+                    if (dst_port == 80) dst_service = " (HTTP)";
+                    else if (dst_port == 443) dst_service = " (HTTPS)";
+                    else if (dst_port == 53) dst_service = " (DNS)";
+                    else if (dst_port == 22) dst_service = " (SSH)";
+                    else if (dst_port == 21) dst_service = " (FTP)";
+                    else if (dst_port == 25) dst_service = " (SMTP)";
+
+                    printf("L4 (TCP): Src Port: %d%s | Dst Port: %d%s | Seq: %u | Ack: %u | Flags: [",
+                           src_port, src_service, dst_port, dst_service, seq, ack_seq);
+
+                    // Decode TCP flags
+                    int flag_count = 0;
+                    if (flags & 0x01) { if (flag_count++) printf(", "); printf("FIN"); }
+                    if (flags & 0x02) { if (flag_count++) printf(", "); printf("SYN"); }
+                    if (flags & 0x04) { if (flag_count++) printf(", "); printf("RST"); }
+                    if (flags & 0x08) { if (flag_count++) printf(", "); printf("PSH"); }
+                    if (flags & 0x10) { if (flag_count++) printf(", "); printf("ACK"); }
+                    if (flags & 0x20) { if (flag_count++) printf(", "); printf("URG"); }
+                    if (flag_count == 0) printf("None");
+                    printf("]\n");
+
+                    printf("Window: %d | Checksum: 0x%04X | Header Length: %d bytes\n",
+                           window, checksum, data_offset);
+
+                } else if (ip_header->protocol == IPPROTO_UDP && transport_remaining >= sizeof(struct udphdr)) {
+                    struct udphdr *udp_header = (struct udphdr *)transport_packet;
+                    
+                    uint16_t src_port = ntohs(udp_header->source);
+                    uint16_t dst_port = ntohs(udp_header->dest);
+                    
+                    // Identify common ports
+                    const char *src_service = "";
+                    const char *dst_service = "";
+                    if (src_port == 53) src_service = " (DNS)";
+                    else if (src_port == 67) src_service = " (DHCP)";
+                    else if (src_port == 68) src_service = " (DHCP)";
+                    else if (src_port == 123) src_service = " (NTP)";
+                    
+                    if (dst_port == 53) dst_service = " (DNS)";
+                    else if (dst_port == 67) dst_service = " (DHCP)";
+                    else if (dst_port == 68) dst_service = " (DHCP)";
+                    else if (dst_port == 123) dst_service = " (NTP)";
+                    
+                    printf("L4 (UDP): Src Port: %d%s | Dst Port: %d%s | Length: %d | Checksum: 0x%04X\n",
+                           src_port, src_service, dst_port, dst_service,
+                           ntohs(udp_header->len), ntohs(udp_header->check));
+                }
+
             } else {
                 printf("L3 (IPv4): Packet too short for IPv4 header\n");
             }
@@ -140,12 +216,87 @@ void packet_handler(unsigned char *user, const struct pcap_pkthdr *pkthdr, const
                     protocol_name = "Unknown";
                 }
                 
-                printf("L3 (IPv6): Src IP: %s | Dst IP: \n%s\n", src_ip, dst_ip);
-                printf("Next Header: %s (%d) | Hop Limit: %d | Traffic Class: %d | Flow \nLabel: 0x%05x | Payload Length: %d\n",
-                       protocol_name, ip6_header->ip6_nxt, ip6_header->ip6_hlim,
+                printf("L3 (IPv6): Src IP: %s | Dst IP: %s | Next Header: %s (%d) | Hop Limit: %d\n",
+                       src_ip, dst_ip, protocol_name, ip6_header->ip6_nxt, ip6_header->ip6_hlim);
+                printf("Traffic Class: %d | Flow Label: 0x%05x | Payload Length: %d\n",
                        (ntohl(ip6_header->ip6_flow) >> 20) & 0xFF,
                        ntohl(ip6_header->ip6_flow) & 0xFFFFF,
                        ntohs(ip6_header->ip6_plen));
+                
+                // Layer 4 - Transport Layer
+                const unsigned char *transport_packet = ip_packet + sizeof(struct ip6_hdr);
+                int transport_remaining = remaining_len - sizeof(struct ip6_hdr);
+
+                if (ip6_header->ip6_nxt == IPPROTO_TCP && transport_remaining >= 20) {
+                    // Manual TCP header parsing for portability
+                    const unsigned char *tcp_data = transport_packet;
+                    
+                    uint16_t src_port = ntohs(*(uint16_t *)(tcp_data));
+                    uint16_t dst_port = ntohs(*(uint16_t *)(tcp_data + 2));
+                    uint32_t seq = ntohl(*(uint32_t *)(tcp_data + 4));
+                    uint32_t ack_seq = ntohl(*(uint32_t *)(tcp_data + 8));
+                    uint8_t data_offset = (tcp_data[12] >> 4) * 4;
+                    uint8_t flags = tcp_data[13];
+                    uint16_t window = ntohs(*(uint16_t *)(tcp_data + 14));
+                    uint16_t checksum = ntohs(*(uint16_t *)(tcp_data + 16));
+                    
+                    // Identify common ports
+                    const char *src_service = "";
+                    const char *dst_service = "";
+                    if (src_port == 80) src_service = " (HTTP)";
+                    else if (src_port == 443) src_service = " (HTTPS)";
+                    else if (src_port == 53) src_service = " (DNS)";
+                    else if (src_port == 22) src_service = " (SSH)";
+                    else if (src_port == 21) src_service = " (FTP)";
+                    else if (src_port == 25) src_service = " (SMTP)";
+                    
+                    if (dst_port == 80) dst_service = " (HTTP)";
+                    else if (dst_port == 443) dst_service = " (HTTPS)";
+                    else if (dst_port == 53) dst_service = " (DNS)";
+                    else if (dst_port == 22) dst_service = " (SSH)";
+                    else if (dst_port == 21) dst_service = " (FTP)";
+                    else if (dst_port == 25) dst_service = " (SMTP)";
+                    
+                    printf("L4 (TCP): Src Port: %d%s | Dst Port: %d%s | Seq: %u | Ack: %u | Flags: [",
+                           src_port, src_service, dst_port, dst_service, seq, ack_seq);
+                    
+                    // Decode TCP flags
+                    int flag_count = 0;
+                    if (flags & 0x01) { if (flag_count++) printf(", "); printf("FIN"); }
+                    if (flags & 0x02) { if (flag_count++) printf(", "); printf("SYN"); }
+                    if (flags & 0x04) { if (flag_count++) printf(", "); printf("RST"); }
+                    if (flags & 0x08) { if (flag_count++) printf(", "); printf("PSH"); }
+                    if (flags & 0x10) { if (flag_count++) printf(", "); printf("ACK"); }
+                    if (flags & 0x20) { if (flag_count++) printf(", "); printf("URG"); }
+                    if (flag_count == 0) printf("None");
+                    printf("]\n");
+                    
+                    printf("Window: %d | Checksum: 0x%04X | Header Length: %d bytes\n",
+                           window, checksum, data_offset);
+                    
+                } else if (ip6_header->ip6_nxt == IPPROTO_UDP && transport_remaining >= sizeof(struct udphdr)) {
+                    struct udphdr *udp_header = (struct udphdr *)transport_packet;
+                    
+                    uint16_t src_port = ntohs(udp_header->source);
+                    uint16_t dst_port = ntohs(udp_header->dest);
+                    
+                    // Identify common ports
+                    const char *src_service = "";
+                    const char *dst_service = "";
+                    if (src_port == 53) src_service = " (DNS)";
+                    else if (src_port == 67) src_service = " (DHCP)";
+                    else if (src_port == 68) src_service = " (DHCP)";
+                    else if (src_port == 123) src_service = " (NTP)";
+                    
+                    if (dst_port == 53) dst_service = " (DNS)";
+                    else if (dst_port == 67) dst_service = " (DHCP)";
+                    else if (dst_port == 68) dst_service = " (DHCP)";
+                    else if (dst_port == 123) dst_service = " (NTP)";
+                    
+                    printf("L4 (UDP): Src Port: %d%s | Dst Port: %d%s | Length: %d | Checksum: 0x%04X\n",
+                           src_port, src_service, dst_port, dst_service,
+                           ntohs(udp_header->len), ntohs(udp_header->check));
+                }
                 
             } else {
                 printf("L3 (IPv6): Packet too short for IPv6 header\n");
@@ -184,7 +335,7 @@ void packet_handler(unsigned char *user, const struct pcap_pkthdr *pkthdr, const
                 memcpy(target_mac, arp_data + 10, 6);
                 memcpy(target_ip, arp_data + 16, 4);
                 
-                printf("\nL3 (ARP): Operation: %s (%d) | Sender IP: %d.%d.%d.%d | Target IP: \n%d.%d.%d.%d\n",
+                printf("\nL3 (ARP): Operation: %s (%d) | Sender IP: %d.%d.%d.%d | Target IP: %d.%d.%d.%d\n",
                        operation, arp_op,
                        sender_ip[0], sender_ip[1], sender_ip[2], sender_ip[3],
                        target_ip[0], target_ip[1], target_ip[2], target_ip[3]);
