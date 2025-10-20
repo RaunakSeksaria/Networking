@@ -91,3 +91,4 @@ void format_mac(const unsigned char *mac, char *buf, size_t buflen) {
     snprintf(buf, buflen, "%02X:%02X:%02X:%02X:%02X:%02X",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
+//  ############## LLM Generated Code Ends ################

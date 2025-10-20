@@ -1,3 +1,5 @@
+############## LLM Generated Code Begins ################
+
  .DEFAULT_GOAL := all
 ## Test harness targets for Part B (traffic generators)
 .PHONY: test-b test-b-phase1 test-b-phase2 test-b-phase3 test-b-phase4 test-b-phase5 test-b-filters test-b-robustness
@@ -54,3 +56,5 @@ clean:
 	rm -f *.o $(TARGET)
 
 re: clean all
+
+########### LLM Generated Code Ends ################

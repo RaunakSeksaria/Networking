@@ -9,3 +9,4 @@ void print_full_hex_dump(const unsigned char *data, int len);
 void format_mac(const unsigned char *mac, char *buf, size_t buflen);
 
 #endif // UTIL_H
+// ############## LLM Generated Code Ends ################
