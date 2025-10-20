@@ -67,10 +67,138 @@ void packet_handler(unsigned char *user, const struct pcap_pkthdr *pkthdr, const
         // Identify EtherType
         if (ether_type == ETHERTYPE_IP) {
             printf("EtherType: IPv4 (0x%04x)\n", ether_type);
+
+            // Decode IPv4 header (Layer 3)
+            const unsigned char *ip_packet = packet + sizeof(struct ether_header);
+            int remaining_len = pkthdr->caplen - sizeof(struct ether_header);
+
+            if (remaining_len >= sizeof(struct iphdr)) {
+                struct iphdr *ip_header = (struct iphdr *)ip_packet;
+
+                // Extract IP addresses
+                char src_ip[INET_ADDRSTRLEN];
+                char dst_ip[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, (struct in_addr *)&(ip_header->saddr), src_ip, INET_ADDRSTRLEN);
+                inet_ntop(AF_INET, (struct in_addr *)&(ip_header->daddr), dst_ip, INET_ADDRSTRLEN);
+
+                // Protocol identification
+                const char *protocol_name;
+                if (ip_header->protocol == IPPROTO_TCP) {
+                    protocol_name = "TCP";
+                } else if (ip_header->protocol == IPPROTO_UDP) {
+                    protocol_name = "UDP";
+                } else if (ip_header->protocol == IPPROTO_ICMP) {
+                    protocol_name = "ICMP";
+                } else {
+                    protocol_name = "Unknown";
+                }
+
+                printf("L3 (IPv4): Src IP: %s | Dst IP: %s | Protocol: %s (%d) |\n",
+                       src_ip, dst_ip, protocol_name, ip_header->protocol);
+                printf("TTL: %d\n", ip_header->ttl);
+                printf("ID: 0x%04X | Total Length: %d | Header Length: %d bytes\n",
+                       ntohs(ip_header->id), ntohs(ip_header->tot_len), ip_header->ihl * 4);
+
+                // Decode flags
+                uint16_t flags_offset = ntohs(ip_header->frag_off);
+                int flags = (flags_offset >> 13) & 0x07;
+                printf("Flags: ");
+                if (flags & 0x02) printf("DF ");
+                if (flags & 0x01) printf("MF ");
+                if (flags == 0) printf("None");
+                printf("\n");
+
+            } else {
+                printf("L3 (IPv4): Packet too short for IPv4 header\n");
+            }
+
         } else if (ether_type == ETHERTYPE_IPV6) {
             printf("EtherType: IPv6 (0x%04x)\n", ether_type);
+            
+            // Decode IPv6 header (Layer 3)
+            const unsigned char *ip_packet = packet + sizeof(struct ether_header);
+            int remaining_len = pkthdr->caplen - sizeof(struct ether_header);
+            
+            if (remaining_len >= sizeof(struct ip6_hdr)) {
+                struct ip6_hdr *ip6_header = (struct ip6_hdr *)ip_packet;
+                
+                // Extract IPv6 addresses
+                char src_ip[INET6_ADDRSTRLEN];
+                char dst_ip[INET6_ADDRSTRLEN];
+                inet_ntop(AF_INET6, &(ip6_header->ip6_src), src_ip, INET6_ADDRSTRLEN);
+                inet_ntop(AF_INET6, &(ip6_header->ip6_dst), dst_ip, INET6_ADDRSTRLEN);
+                
+                // Protocol identification
+                const char *protocol_name;
+                if (ip6_header->ip6_nxt == IPPROTO_TCP) {
+                    protocol_name = "TCP";
+                } else if (ip6_header->ip6_nxt == IPPROTO_UDP) {
+                    protocol_name = "UDP";
+                } else if (ip6_header->ip6_nxt == IPPROTO_ICMPV6) {
+                    protocol_name = "ICMPv6";
+                } else {
+                    protocol_name = "Unknown";
+                }
+                
+                printf("L3 (IPv6): Src IP: %s | Dst IP: \n%s\n", src_ip, dst_ip);
+                printf("Next Header: %s (%d) | Hop Limit: %d | Traffic Class: %d | Flow \nLabel: 0x%05x | Payload Length: %d\n",
+                       protocol_name, ip6_header->ip6_nxt, ip6_header->ip6_hlim,
+                       (ntohl(ip6_header->ip6_flow) >> 20) & 0xFF,
+                       ntohl(ip6_header->ip6_flow) & 0xFFFFF,
+                       ntohs(ip6_header->ip6_plen));
+                
+            } else {
+                printf("L3 (IPv6): Packet too short for IPv6 header\n");
+            }
+            
         } else if (ether_type == ETHERTYPE_ARP) {
             printf("EtherType: ARP (0x%04x)\n", ether_type);
+            
+            // Decode ARP header (Layer 3)
+            const unsigned char *arp_packet = packet + sizeof(struct ether_header);
+            int remaining_len = pkthdr->caplen - sizeof(struct ether_header);
+            
+            if (remaining_len >= sizeof(struct arphdr) + 20) { // ARP header + addresses
+                struct arphdr *arp_header = (struct arphdr *)arp_packet;
+                
+                // Operation
+                uint16_t arp_op = ntohs(arp_header->ar_op);
+                const char *operation;
+                if (arp_op == ARPOP_REQUEST) {
+                    operation = "Request";
+                } else if (arp_op == ARPOP_REPLY) {
+                    operation = "Reply";
+                } else {
+                    operation = "Unknown";
+                }
+                
+                // Extract MAC and IP addresses from ARP payload
+                const unsigned char *arp_data = arp_packet + sizeof(struct arphdr);
+                unsigned char sender_mac[6];
+                unsigned char sender_ip[4];
+                unsigned char target_mac[6];
+                unsigned char target_ip[4];
+                
+                memcpy(sender_mac, arp_data, 6);
+                memcpy(sender_ip, arp_data + 6, 4);
+                memcpy(target_mac, arp_data + 10, 6);
+                memcpy(target_ip, arp_data + 16, 4);
+                
+                printf("\nL3 (ARP): Operation: %s (%d) | Sender IP: %d.%d.%d.%d | Target IP: \n%d.%d.%d.%d\n",
+                       operation, arp_op,
+                       sender_ip[0], sender_ip[1], sender_ip[2], sender_ip[3],
+                       target_ip[0], target_ip[1], target_ip[2], target_ip[3]);
+                printf("Sender MAC: %02X:%02X:%02X:%02X:%02X:%02X | Target MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                       sender_mac[0], sender_mac[1], sender_mac[2], sender_mac[3], sender_mac[4], sender_mac[5],
+                       target_mac[0], target_mac[1], target_mac[2], target_mac[3], target_mac[4], target_mac[5]);
+                printf("HW Type: %d | Proto Type: 0x%04x | HW Len: %d | Proto Len: %d\n",
+                       ntohs(arp_header->ar_hrd), ntohs(arp_header->ar_pro),
+                       arp_header->ar_hln, arp_header->ar_pln);
+                
+            } else {
+                printf("L3 (ARP): Packet too short for ARP header\n");
+            }
+            
         } else {
             printf("EtherType: Unknown (0x%04x)\n", ether_type);
         }
@@ -78,7 +206,7 @@ void packet_handler(unsigned char *user, const struct pcap_pkthdr *pkthdr, const
         printf("L2 (Ethernet): Packet too short for Ethernet header\n");
     }   
     
-    printf("\n");
+    // printf("\n");
 }
 
 // Function to list all available network interfaces
