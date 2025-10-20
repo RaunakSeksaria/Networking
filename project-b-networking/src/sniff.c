@@ -18,24 +18,10 @@ static void sigint_handler(int sig) {
     if (g_handle) pcap_breakloop(g_handle);
 }
 
-int start_sniff(const char *dev_name) {
-    char errbuf[PCAP_ERRBUF_SIZE];
-    pcap_t *handle = pcap_open_live(dev_name, BUFSIZ, 1, 1000, errbuf);
-    if (!handle) {
-        fprintf(stderr, "Couldn't open device %s: %s\n", dev_name, errbuf);
-        return -1;
-    }
-
-    if (pcap_setnonblock(handle, 1, errbuf) == -1) {
-        fprintf(stderr, "pcap_setnonblock: %s\n", errbuf);
-        pcap_close(handle);
-        return -1;
-    }
-
+static int sniff_loop(pcap_t *handle, const char *dev_name) {
     int pcap_fd = pcap_get_selectable_fd(handle);
     if (pcap_fd == -1) {
         fprintf(stderr, "pcap_get_selectable_fd failed\n");
-        pcap_close(handle);
         return -1;
     }
 
@@ -68,6 +54,7 @@ int start_sniff(const char *dev_name) {
             if (n == 0) {
                 // EOF -> exit entire program
                 printf("\n[C-Shark] EOF detected, exiting.\n");
+                fcntl(STDIN_FILENO, F_SETFL, stdin_flags);
                 pcap_close(handle);
                 exit(0);
             }
@@ -80,8 +67,71 @@ int start_sniff(const char *dev_name) {
     // restore stdin flags
     fcntl(STDIN_FILENO, F_SETFL, stdin_flags);
 
-    pcap_close(handle);
     g_handle = NULL;
     printf("\n[C-Shark] Capture stopped.\n");
     return 0;
+}
+
+int start_sniff(const char *dev_name) {
+    char errbuf[PCAP_ERRBUF_SIZE];
+    pcap_t *handle = pcap_open_live(dev_name, BUFSIZ, 1, 1000, errbuf);
+    if (!handle) {
+        fprintf(stderr, "Couldn't open device %s: %s\n", dev_name, errbuf);
+        return -1;
+    }
+
+    if (pcap_setnonblock(handle, 1, errbuf) == -1) {
+        fprintf(stderr, "pcap_setnonblock: %s\n", errbuf);
+        pcap_close(handle);
+        return -1;
+    }
+
+    int result = sniff_loop(handle, dev_name);
+    pcap_close(handle);
+    return result;
+}
+
+int start_sniff_filtered(const char *dev_name, const char *filter) {
+    char errbuf[PCAP_ERRBUF_SIZE];
+    pcap_t *handle = pcap_open_live(dev_name, BUFSIZ, 1, 1000, errbuf);
+    if (!handle) {
+        fprintf(stderr, "Couldn't open device %s: %s\n", dev_name, errbuf);
+        return -1;
+    }
+
+    // Compile and apply the filter
+    struct bpf_program fp;
+    bpf_u_int32 net, mask;
+    
+    if (pcap_lookupnet(dev_name, &net, &mask, errbuf) == -1) {
+        fprintf(stderr, "Warning: Couldn't get netmask for device %s: %s\n", dev_name, errbuf);
+        net = 0;
+        mask = 0;
+    }
+
+    if (pcap_compile(handle, &fp, filter, 0, net) == -1) {
+        fprintf(stderr, "Couldn't parse filter %s: %s\n", filter, pcap_geterr(handle));
+        pcap_close(handle);
+        return -1;
+    }
+
+    if (pcap_setfilter(handle, &fp) == -1) {
+        fprintf(stderr, "Couldn't install filter %s: %s\n", filter, pcap_geterr(handle));
+        pcap_freecode(&fp);
+        pcap_close(handle);
+        return -1;
+    }
+
+    pcap_freecode(&fp);
+
+    if (pcap_setnonblock(handle, 1, errbuf) == -1) {
+        fprintf(stderr, "pcap_setnonblock: %s\n", errbuf);
+        pcap_close(handle);
+        return -1;
+    }
+
+    printf("[C-Shark] Applied filter: %s\n", filter);
+    int result = sniff_loop(handle, dev_name);
+    pcap_close(handle);
+    return result;
 }

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pcap.h>
 #include "../include/util.h"
 #include "../include/sniff.h"
 
@@ -22,6 +23,11 @@ int main() {
         fprintf(stderr, "Invalid selection.\n");
         return 1;
     }
+    
+    // Clear input buffer
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+    
     // fetch device name
     pcap_if_t *alldevs, *dev;
     char errbuf[PCAP_ERRBUF_SIZE];
@@ -44,7 +50,7 @@ int main() {
     while (1) {
         printf("\n[C-Shark] Interface '%s' selected. What's next?\n\n", dev_name);
         printf("1. Start Sniffing (All Packets)\n");
-        printf("2. Start Sniffing (With Filters) <-- To be implemented later\n");
+        printf("2. Start Sniffing (With Filters)\n");
         printf("3. Inspect Last Session <-- To be implemented later\n");
         printf("4. Exit C-Shark\n");
         printf("Enter your choice: ");
@@ -58,12 +64,63 @@ int main() {
             printf("Invalid input. Please enter a number.\n");
             continue;
         }
+        
+        // Clear input buffer
+        while ((c = getchar()) != '\n' && c != EOF);
 
         switch (menu_choice) {
             case 1:
                 start_sniff(dev_name);
                 break;
-            case 2:
+            case 2: {
+                printf("\n[C-Shark] Select a protocol to filter:\n\n");
+                printf("1. HTTP\n");
+                printf("2. HTTPS\n");
+                printf("3. DNS\n");
+                printf("4. ARP\n");
+                printf("5. TCP\n");
+                printf("6. UDP\n");
+                printf("Enter your choice (1-6): ");
+                fflush(stdout);
+                
+                int filter_choice;
+                if (scanf("%d", &filter_choice) != 1) {
+                    while ((c = getchar()) != '\n' && c != EOF);
+                    printf("Invalid input.\n");
+                    break;
+                }
+                while ((c = getchar()) != '\n' && c != EOF);
+                
+                const char *filter = NULL;
+                switch (filter_choice) {
+                    case 1:
+                        filter = "tcp port 80";
+                        break;
+                    case 2:
+                        filter = "tcp port 443";
+                        break;
+                    case 3:
+                        filter = "udp port 53 or tcp port 53";
+                        break;
+                    case 4:
+                        filter = "arp";
+                        break;
+                    case 5:
+                        filter = "tcp";
+                        break;
+                    case 6:
+                        filter = "udp";
+                        break;
+                    default:
+                        printf("Invalid filter choice.\n");
+                        break;
+                }
+                
+                if (filter) {
+                    start_sniff_filtered(dev_name, filter);
+                }
+                break;
+            }
             case 3:
                 printf("This feature is not yet implemented.\n");
                 break;
@@ -73,6 +130,7 @@ int main() {
                 return 0;
             default:
                 printf("Invalid choice. Please try again.\n");
+                break;
         }
     }
 
