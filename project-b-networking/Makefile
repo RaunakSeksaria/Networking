@@ -33,12 +33,10 @@ test-b-filters:
 test-b-robustness:
 	@bash tests/robustness.sh
 CC = gcc
-CFLAGS = -I./include -Wall -Wextra -O2
+CFLAGS = -Wall -Wextra -O2
 LDFLAGS = -lpcap
 
-SRCDIR = src
-INCDIR = include
-OBJ = $(SRCDIR)/main.o $(SRCDIR)/sniff.o $(SRCDIR)/decode.o $(SRCDIR)/util.o $(SRCDIR)/session.o
+OBJ = main.o sniff.o decode.o util.o session.o
 
 TARGET = cshark
 
@@ -49,10 +47,10 @@ all: $(TARGET)
 $(TARGET): $(OBJ)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-$(SRCDIR)/%.o: $(SRCDIR)/%.c
+%.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(SRCDIR)/*.o $(TARGET)
+	rm -f *.o $(TARGET)
 
 re: clean all

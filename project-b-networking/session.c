@@ -1,5 +1,5 @@
-#include "../include/session.h"
-#include "../include/decode.h"
+#include "session.h"
+#include "decode.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

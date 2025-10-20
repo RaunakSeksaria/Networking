@@ -1,6 +1,6 @@
-#include "../include/sniff.h"
-#include "../include/decode.h"
-#include "../include/session.h"
+#include "sniff.h"
+#include "decode.h"
+#include "session.h"
 #include <pcap.h>
 #include <stdio.h>
 #include <stdlib.h>

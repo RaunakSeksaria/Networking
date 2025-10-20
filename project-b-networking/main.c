@@ -2,9 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pcap.h>
-#include "../include/util.h"
-#include "../include/sniff.h"
-#include "../include/session.h"
+#include "util.h"
+#include "sniff.h"
+#include "session.h"
 
 int main() {
     // Initialize session management

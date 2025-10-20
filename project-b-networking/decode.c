@@ -1,5 +1,5 @@
-#include "../include/decode.h"
-#include "../include/util.h"
+#include "decode.h"
+#include "util.h"
 #include <pcap.h>
 
 #include <stdio.h>
