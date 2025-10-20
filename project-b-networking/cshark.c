@@ -44,14 +44,41 @@ void print_hex(const unsigned char *data, int len) {
 void packet_handler(unsigned char *user, const struct pcap_pkthdr *pkthdr, const unsigned char *packet) {
     static int packet_id = 1;
     char time_buf[64];
-    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", localtime(&pkthdr->ts.tv_sec));
-
-    printf("Packet ID: %d\n", packet_id++);
-    printf("Timestamp: %s.%06ld\n", time_buf, pkthdr->ts.tv_usec);
-    printf("Captured Length: %d bytes\n", pkthdr->caplen);
-    printf("Raw Bytes (first 16): ");
-    print_hex(packet, pkthdr->caplen);
-    printf("----------------------------------------------\n");
+    
+    printf("-----------------------------------------\n");
+    printf("Packet #%d | Timestamp: %ld.%06ld | Length: %d bytes\n", 
+           packet_id++, pkthdr->ts.tv_sec, pkthdr->ts.tv_usec, pkthdr->caplen);
+    
+    // Decode Ethernet header (Layer 2)
+    if (pkthdr->caplen >= sizeof(struct ether_header)) {
+        struct ether_header *eth_header = (struct ether_header *)packet;
+        
+        // Extract MAC addresses
+        unsigned char *src_mac = eth_header->ether_shost;
+        unsigned char *dst_mac = eth_header->ether_dhost;
+        
+        // Get EtherType
+        uint16_t ether_type = ntohs(eth_header->ether_type);
+        
+        printf("L2 (Ethernet): Dst MAC: %02X:%02X:%02X:%02X:%02X:%02X | Src MAC: %02X:%02X:%02X:%02X:%02X:%02X |\n",
+               dst_mac[0], dst_mac[1], dst_mac[2], dst_mac[3], dst_mac[4], dst_mac[5],
+               src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5]);
+        
+        // Identify EtherType
+        if (ether_type == ETHERTYPE_IP) {
+            printf("EtherType: IPv4 (0x%04x)\n", ether_type);
+        } else if (ether_type == ETHERTYPE_IPV6) {
+            printf("EtherType: IPv6 (0x%04x)\n", ether_type);
+        } else if (ether_type == ETHERTYPE_ARP) {
+            printf("EtherType: ARP (0x%04x)\n", ether_type);
+        } else {
+            printf("EtherType: Unknown (0x%04x)\n", ether_type);
+        }
+    } else {
+        printf("L2 (Ethernet): Packet too short for Ethernet header\n");
+    }   
+    
+    printf("\n");
 }
 
 // Function to list all available network interfaces
