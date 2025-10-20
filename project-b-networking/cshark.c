@@ -40,6 +40,34 @@ void print_hex(const unsigned char *data, int len) {
     printf("\n");
 }
 
+// Function to print hex dump (16 bytes per line with ASCII representation)
+void print_hex_dump(const unsigned char *data, int len) {
+    int bytes_to_print = (len > 64) ? 64 : len;
+    
+    for (int i = 0; i < bytes_to_print; i += 16) {
+        // Print hex values
+        for (int j = 0; j < 16 && (i + j) < bytes_to_print; j++) {
+            printf("%02X ", data[i + j]);
+        }
+        
+        // Pad if less than 16 bytes in this line
+        for (int j = bytes_to_print - i; j < 16 && j > 0; j++) {
+            printf("   ");
+        }
+        
+        // Print ASCII representation
+        for (int j = 0; j < 16 && (i + j) < bytes_to_print; j++) {
+            unsigned char c = data[i + j];
+            if (c >= 32 && c <= 126) {
+                printf("%c", c);
+            } else {
+                printf(".");
+            }
+        }
+        printf("\n");
+    }
+}
+
 // Callback function for pcap_loop
 void packet_handler(unsigned char *user, const struct pcap_pkthdr *pkthdr, const unsigned char *packet) {
     static int packet_id = 1;
@@ -122,43 +150,58 @@ void packet_handler(unsigned char *user, const struct pcap_pkthdr *pkthdr, const
                     uint32_t seq = ntohl(*(uint32_t *)(tcp_data + 4));
                     uint32_t ack_seq = ntohl(*(uint32_t *)(tcp_data + 8));
                     uint8_t data_offset = (tcp_data[12] >> 4) * 4;
-                    uint8_t flags = tcp_data[13];
+                    uint8_t tcp_flags = tcp_data[13];
                     uint16_t window = ntohs(*(uint16_t *)(tcp_data + 14));
                     uint16_t checksum = ntohs(*(uint16_t *)(tcp_data + 16));
 
                     // Identify common ports
                     const char *src_service = "";
                     const char *dst_service = "";
-                    if (src_port == 80) src_service = " (HTTP)";
-                    else if (src_port == 443) src_service = " (HTTPS)";
-                    else if (src_port == 53) src_service = " (DNS)";
-                    else if (src_port == 22) src_service = " (SSH)";
-                    else if (src_port == 21) src_service = " (FTP)";
-                    else if (src_port == 25) src_service = " (SMTP)";
+                    const char *app_protocol = "Unknown";
+                    
+                    if (src_port == 80) { src_service = " (HTTP)"; app_protocol = "HTTP"; }
+                    else if (src_port == 443) { src_service = " (HTTPS)"; app_protocol = "HTTPS/TLS"; }
+                    else if (src_port == 53) { src_service = " (DNS)"; app_protocol = "DNS"; }
+                    else if (src_port == 22) { src_service = " (SSH)"; app_protocol = "SSH"; }
+                    else if (src_port == 21) { src_service = " (FTP)"; app_protocol = "FTP"; }
+                    else if (src_port == 25) { src_service = " (SMTP)"; app_protocol = "SMTP"; }
 
-                    if (dst_port == 80) dst_service = " (HTTP)";
-                    else if (dst_port == 443) dst_service = " (HTTPS)";
-                    else if (dst_port == 53) dst_service = " (DNS)";
-                    else if (dst_port == 22) dst_service = " (SSH)";
-                    else if (dst_port == 21) dst_service = " (FTP)";
-                    else if (dst_port == 25) dst_service = " (SMTP)";
+                    if (dst_port == 80) { dst_service = " (HTTP)"; app_protocol = "HTTP"; }
+                    else if (dst_port == 443) { dst_service = " (HTTPS)"; app_protocol = "HTTPS/TLS"; }
+                    else if (dst_port == 53) { dst_service = " (DNS)"; app_protocol = "DNS"; }
+                    else if (dst_port == 22) { dst_service = " (SSH)"; app_protocol = "SSH"; }
+                    else if (dst_port == 21) { dst_service = " (FTP)"; app_protocol = "FTP"; }
+                    else if (dst_port == 25) { dst_service = " (SMTP)"; app_protocol = "SMTP"; }
 
                     printf("L4 (TCP): Src Port: %d%s | Dst Port: %d%s | Seq: %u | Ack: %u | Flags: [",
                            src_port, src_service, dst_port, dst_service, seq, ack_seq);
 
                     // Decode TCP flags
                     int flag_count = 0;
-                    if (flags & 0x01) { if (flag_count++) printf(", "); printf("FIN"); }
-                    if (flags & 0x02) { if (flag_count++) printf(", "); printf("SYN"); }
-                    if (flags & 0x04) { if (flag_count++) printf(", "); printf("RST"); }
-                    if (flags & 0x08) { if (flag_count++) printf(", "); printf("PSH"); }
-                    if (flags & 0x10) { if (flag_count++) printf(", "); printf("ACK"); }
-                    if (flags & 0x20) { if (flag_count++) printf(", "); printf("URG"); }
+                    if (tcp_flags & 0x01) { if (flag_count++) printf(","); printf("FIN"); }
+                    if (tcp_flags & 0x02) { if (flag_count++) printf(","); printf("SYN"); }
+                    if (tcp_flags & 0x04) { if (flag_count++) printf(","); printf("RST"); }
+                    if (tcp_flags & 0x08) { if (flag_count++) printf(","); printf("PSH"); }
+                    if (tcp_flags & 0x10) { if (flag_count++) printf(","); printf("ACK"); }
+                    if (tcp_flags & 0x20) { if (flag_count++) printf(","); printf("URG"); }
                     if (flag_count == 0) printf("None");
                     printf("]\n");
 
                     printf("Window: %d | Checksum: 0x%04X | Header Length: %d bytes\n",
                            window, checksum, data_offset);
+
+                    // Layer 7 - Payload
+                    const unsigned char *payload = tcp_data + data_offset;
+                    int payload_len = transport_remaining - data_offset;
+                    
+                    if (payload_len > 0) {
+                        printf("L7 (Payload): Identified as %s on port %d - %d bytes\n",
+                               app_protocol, (src_port == 80 || src_port == 443 || src_port == 53 || 
+                                             src_port == 22 || src_port == 21 || src_port == 25) ? src_port : dst_port,
+                               payload_len);
+                        printf("Data (first %d bytes):\n", (payload_len > 64) ? 64 : payload_len);
+                        print_hex_dump(payload, payload_len);
+                    }
 
                 } else if (ip_header->protocol == IPPROTO_UDP && transport_remaining >= sizeof(struct udphdr)) {
                     struct udphdr *udp_header = (struct udphdr *)transport_packet;
@@ -169,19 +212,34 @@ void packet_handler(unsigned char *user, const struct pcap_pkthdr *pkthdr, const
                     // Identify common ports
                     const char *src_service = "";
                     const char *dst_service = "";
-                    if (src_port == 53) src_service = " (DNS)";
-                    else if (src_port == 67) src_service = " (DHCP)";
-                    else if (src_port == 68) src_service = " (DHCP)";
-                    else if (src_port == 123) src_service = " (NTP)";
+                    const char *app_protocol = "Unknown";
                     
-                    if (dst_port == 53) dst_service = " (DNS)";
-                    else if (dst_port == 67) dst_service = " (DHCP)";
-                    else if (dst_port == 68) dst_service = " (DHCP)";
-                    else if (dst_port == 123) dst_service = " (NTP)";
+                    if (src_port == 53) { src_service = " (DNS)"; app_protocol = "DNS"; }
+                    else if (src_port == 67) { src_service = " (DHCP)"; app_protocol = "DHCP"; }
+                    else if (src_port == 68) { src_service = " (DHCP)"; app_protocol = "DHCP"; }
+                    else if (src_port == 123) { src_service = " (NTP)"; app_protocol = "NTP"; }
+                    
+                    if (dst_port == 53) { dst_service = " (DNS)"; app_protocol = "DNS"; }
+                    else if (dst_port == 67) { dst_service = " (DHCP)"; app_protocol = "DHCP"; }
+                    else if (dst_port == 68) { dst_service = " (DHCP)"; app_protocol = "DHCP"; }
+                    else if (dst_port == 123) { dst_service = " (NTP)"; app_protocol = "NTP"; }
                     
                     printf("L4 (UDP): Src Port: %d%s | Dst Port: %d%s | Length: %d | Checksum: 0x%04X\n",
                            src_port, src_service, dst_port, dst_service,
                            ntohs(udp_header->len), ntohs(udp_header->check));
+                    
+                    // Layer 7 - Payload
+                    const unsigned char *payload = transport_packet + sizeof(struct udphdr);
+                    int payload_len = transport_remaining - sizeof(struct udphdr);
+                    
+                    if (payload_len > 0) {
+                        printf("L7 (Payload): Identified as %s on port %d - %d bytes\n",
+                               app_protocol, (src_port == 53 || src_port == 67 || 
+                                             src_port == 68 || src_port == 123) ? src_port : dst_port,
+                               payload_len);
+                        printf("Data (first %d bytes):\n", (payload_len > 64) ? 64 : payload_len);
+                        print_hex_dump(payload, payload_len);
+                    }
                 }
 
             } else {
@@ -236,43 +294,58 @@ void packet_handler(unsigned char *user, const struct pcap_pkthdr *pkthdr, const
                     uint32_t seq = ntohl(*(uint32_t *)(tcp_data + 4));
                     uint32_t ack_seq = ntohl(*(uint32_t *)(tcp_data + 8));
                     uint8_t data_offset = (tcp_data[12] >> 4) * 4;
-                    uint8_t flags = tcp_data[13];
+                    uint8_t tcp_flags = tcp_data[13];
                     uint16_t window = ntohs(*(uint16_t *)(tcp_data + 14));
                     uint16_t checksum = ntohs(*(uint16_t *)(tcp_data + 16));
                     
                     // Identify common ports
                     const char *src_service = "";
                     const char *dst_service = "";
-                    if (src_port == 80) src_service = " (HTTP)";
-                    else if (src_port == 443) src_service = " (HTTPS)";
-                    else if (src_port == 53) src_service = " (DNS)";
-                    else if (src_port == 22) src_service = " (SSH)";
-                    else if (src_port == 21) src_service = " (FTP)";
-                    else if (src_port == 25) src_service = " (SMTP)";
+                    const char *app_protocol = "Unknown";
                     
-                    if (dst_port == 80) dst_service = " (HTTP)";
-                    else if (dst_port == 443) dst_service = " (HTTPS)";
-                    else if (dst_port == 53) dst_service = " (DNS)";
-                    else if (dst_port == 22) dst_service = " (SSH)";
-                    else if (dst_port == 21) dst_service = " (FTP)";
-                    else if (dst_port == 25) dst_service = " (SMTP)";
+                    if (src_port == 80) { src_service = " (HTTP)"; app_protocol = "HTTP"; }
+                    else if (src_port == 443) { src_service = " (HTTPS)"; app_protocol = "HTTPS/TLS"; }
+                    else if (src_port == 53) { src_service = " (DNS)"; app_protocol = "DNS"; }
+                    else if (src_port == 22) { src_service = " (SSH)"; app_protocol = "SSH"; }
+                    else if (src_port == 21) { src_service = " (FTP)"; app_protocol = "FTP"; }
+                    else if (src_port == 25) { src_service = " (SMTP)"; app_protocol = "SMTP"; }
+                    
+                    if (dst_port == 80) { dst_service = " (HTTP)"; app_protocol = "HTTP"; }
+                    else if (dst_port == 443) { dst_service = " (HTTPS)"; app_protocol = "HTTPS/TLS"; }
+                    else if (dst_port == 53) { dst_service = " (DNS)"; app_protocol = "DNS"; }
+                    else if (dst_port == 22) { dst_service = " (SSH)"; app_protocol = "SSH"; }
+                    else if (dst_port == 21) { dst_service = " (FTP)"; app_protocol = "FTP"; }
+                    else if (dst_port == 25) { dst_service = " (SMTP)"; app_protocol = "SMTP"; }
                     
                     printf("L4 (TCP): Src Port: %d%s | Dst Port: %d%s | Seq: %u | Ack: %u | Flags: [",
                            src_port, src_service, dst_port, dst_service, seq, ack_seq);
                     
                     // Decode TCP flags
                     int flag_count = 0;
-                    if (flags & 0x01) { if (flag_count++) printf(", "); printf("FIN"); }
-                    if (flags & 0x02) { if (flag_count++) printf(", "); printf("SYN"); }
-                    if (flags & 0x04) { if (flag_count++) printf(", "); printf("RST"); }
-                    if (flags & 0x08) { if (flag_count++) printf(", "); printf("PSH"); }
-                    if (flags & 0x10) { if (flag_count++) printf(", "); printf("ACK"); }
-                    if (flags & 0x20) { if (flag_count++) printf(", "); printf("URG"); }
+                    if (tcp_flags & 0x01) { if (flag_count++) printf(","); printf("FIN"); }
+                    if (tcp_flags & 0x02) { if (flag_count++) printf(","); printf("SYN"); }
+                    if (tcp_flags & 0x04) { if (flag_count++) printf(","); printf("RST"); }
+                    if (tcp_flags & 0x08) { if (flag_count++) printf(","); printf("PSH"); }
+                    if (tcp_flags & 0x10) { if (flag_count++) printf(","); printf("ACK"); }
+                    if (tcp_flags & 0x20) { if (flag_count++) printf(","); printf("URG"); }
                     if (flag_count == 0) printf("None");
                     printf("]\n");
                     
                     printf("Window: %d | Checksum: 0x%04X | Header Length: %d bytes\n",
                            window, checksum, data_offset);
+                    
+                    // Layer 7 - Payload
+                    const unsigned char *payload = tcp_data + data_offset;
+                    int payload_len = transport_remaining - data_offset;
+                    
+                    if (payload_len > 0) {
+                        printf("L7 (Payload): Identified as %s on port %d - %d bytes\n",
+                               app_protocol, (src_port == 80 || src_port == 443 || src_port == 53 || 
+                                             src_port == 22 || src_port == 21 || src_port == 25) ? src_port : dst_port,
+                               payload_len);
+                        printf("Data (first %d bytes):\n", (payload_len > 64) ? 64 : payload_len);
+                        print_hex_dump(payload, payload_len);
+                    }
                     
                 } else if (ip6_header->ip6_nxt == IPPROTO_UDP && transport_remaining >= sizeof(struct udphdr)) {
                     struct udphdr *udp_header = (struct udphdr *)transport_packet;
@@ -283,19 +356,34 @@ void packet_handler(unsigned char *user, const struct pcap_pkthdr *pkthdr, const
                     // Identify common ports
                     const char *src_service = "";
                     const char *dst_service = "";
-                    if (src_port == 53) src_service = " (DNS)";
-                    else if (src_port == 67) src_service = " (DHCP)";
-                    else if (src_port == 68) src_service = " (DHCP)";
-                    else if (src_port == 123) src_service = " (NTP)";
+                    const char *app_protocol = "Unknown";
                     
-                    if (dst_port == 53) dst_service = " (DNS)";
-                    else if (dst_port == 67) dst_service = " (DHCP)";
-                    else if (dst_port == 68) dst_service = " (DHCP)";
-                    else if (dst_port == 123) dst_service = " (NTP)";
+                    if (src_port == 53) { src_service = " (DNS)"; app_protocol = "DNS"; }
+                    else if (src_port == 67) { src_service = " (DHCP)"; app_protocol = "DHCP"; }
+                    else if (src_port == 68) { src_service = " (DHCP)"; app_protocol = "DHCP"; }
+                    else if (src_port == 123) { src_service = " (NTP)"; app_protocol = "NTP"; }
+                    
+                    if (dst_port == 53) { dst_service = " (DNS)"; app_protocol = "DNS"; }
+                    else if (dst_port == 67) { dst_service = " (DHCP)"; app_protocol = "DHCP"; }
+                    else if (dst_port == 68) { dst_service = " (DHCP)"; app_protocol = "DHCP"; }
+                    else if (dst_port == 123) { dst_service = " (NTP)"; app_protocol = "NTP"; }
                     
                     printf("L4 (UDP): Src Port: %d%s | Dst Port: %d%s | Length: %d | Checksum: 0x%04X\n",
                            src_port, src_service, dst_port, dst_service,
                            ntohs(udp_header->len), ntohs(udp_header->check));
+                    
+                    // Layer 7 - Payload
+                    const unsigned char *payload = transport_packet + sizeof(struct udphdr);
+                    int payload_len = transport_remaining - sizeof(struct udphdr);
+                    
+                    if (payload_len > 0) {
+                        printf("L7 (Payload): Identified as %s on port %d - %d bytes\n",
+                               app_protocol, (src_port == 53 || src_port == 67 || 
+                                             src_port == 68 || src_port == 123) ? src_port : dst_port,
+                               payload_len);
+                        printf("Data (first %d bytes):\n", (payload_len > 64) ? 64 : payload_len);
+                        print_hex_dump(payload, payload_len);
+                    }
                 }
                 
             } else {
