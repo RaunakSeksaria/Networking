@@ -17,8 +17,13 @@
 static inline uint16_t read_u16(const unsigned char *p) { return ntohs(*(const uint16_t *)p); }
 static inline uint32_t read_u32(const unsigned char *p) { return ntohl(*(const uint32_t *)p); }
 
+static unsigned long packet_id = 1;
+
+void reset_packet_id() {
+    packet_id = 1;
+}
+
 void decode_packet(unsigned char *user, const struct pcap_pkthdr *pkthdr, const unsigned char *packet) {
-    static unsigned long packet_id = 1;
     printf("-----------------------------------------\n");
     printf("Packet #%lu | Timestamp: %ld.%06ld | Length: %u bytes\n",
            packet_id++, pkthdr->ts.tv_sec, pkthdr->ts.tv_usec, pkthdr->caplen);

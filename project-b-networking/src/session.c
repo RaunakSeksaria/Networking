@@ -39,6 +39,9 @@ void session_start_new(const char *interface, const char *filter) {
     // Clean up previous session
     session_cleanup();
     
+    // Reset packet ID counter for new session
+    reset_packet_id();
+    
     // Initialize new session
     current_session.packets = malloc(MAX_PACKETS * sizeof(stored_packet_t));
     if (!current_session.packets) {
@@ -215,6 +218,7 @@ void session_inspect() {
     switch (choice) {
         case 1: {
             printf("\n[C-Shark] Displaying all %u packets from session:\n\n", current_session.count);
+            reset_packet_id(); // Reset counter for display
             for (unsigned int i = 0; i < current_session.count; i++) {
                 struct pcap_pkthdr pkthdr;
                 pkthdr.ts = current_session.packets[i].timestamp;
@@ -255,6 +259,7 @@ void session_inspect() {
             while ((c = getchar()) != '\n' && c != EOF);
             
             printf("\n[C-Shark] Displaying packets %u to %u:\n\n", start, end);
+            reset_packet_id(); // Reset counter for display
             for (unsigned int i = start - 1; i < end; i++) {
                 struct pcap_pkthdr pkthdr;
                 pkthdr.ts = current_session.packets[i].timestamp;
