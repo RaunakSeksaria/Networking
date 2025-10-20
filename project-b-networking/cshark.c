@@ -15,14 +15,19 @@
 #include <ctype.h>
 #include <time.h>
 #include <sys/types.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/select.h>
 
 // Global variable for the pcap handle to be accessible in the signal handler
 pcap_t *handle;
+volatile sig_atomic_t stop_sniffing = 0;
 
 // Signal handler for Ctrl+C (SIGINT)
 void handle_sigint(int sig) {
     if (handle != NULL) {
         printf("\n[C-Shark] Stopping capture...\n");
+        stop_sniffing = 1;
         pcap_breakloop(handle);
     }
 }
@@ -116,7 +121,17 @@ int main() {
     }
 
     printf("\nSelect an interface to sniff (1-%d): ", num_devices);
-    if (scanf("%d", &choice) != 1 || choice < 1 || choice > num_devices) {
+    fflush(stdout);
+    if (scanf("%d", &choice) != 1) {
+        if (feof(stdin)) {
+            printf("\n[C-Shark] Exiting...\n");
+            return 0;
+        }
+        fprintf(stderr, "Invalid selection.\n");
+        return 1;
+    }
+    
+    if (choice < 1 || choice > num_devices) {
         fprintf(stderr, "Invalid selection.\n");
         return 1;
     }
@@ -146,14 +161,18 @@ int main() {
         printf("3. Inspect Last Session <-- To be implemented later\n");
         printf("4. Exit C-Shark\n");
         printf("Enter your choice: ");
+        fflush(stdout);
 
         if (scanf("%d", &menu_choice) != 1) {
             // Clear input buffer in case of non-integer input
-            while (getchar() != '\n');
+            int c;
+            while ((c = getchar()) != '\n' && c != EOF);
+            
             // Check for EOF (Ctrl+D)
             if (feof(stdin)) {
                 printf("\n[C-Shark] Exiting...\n");
-                break;
+                free(dev_name);
+                return 0;
             }
             printf("Invalid input. Please enter a number.\n");
             continue;
@@ -162,14 +181,73 @@ int main() {
 
         switch (menu_choice) {
             case 1:
-                printf("\n[C-Shark] Starting capture on '%s'. Press Ctrl+C to stop.\n\n", dev_name);
+                printf("\n[C-Shark] Starting capture on '%s'. Press Ctrl+C or Ctrl+D to stop.\n\n", dev_name);
+                stop_sniffing = 0;
                 handle = pcap_open_live(dev_name, BUFSIZ, 1, 1000, errbuf);
                 if (handle == NULL) {
                     fprintf(stderr, "Couldn't open device %s: %s\n", dev_name, errbuf);
                     free(dev_name);
                     return 2;
                 }
-                pcap_loop(handle, 0, packet_handler, NULL);
+                
+                // Set pcap to non-blocking mode
+                if (pcap_setnonblock(handle, 1, errbuf) == -1) {
+                    fprintf(stderr, "Error setting non-blocking mode: %s\n", errbuf);
+                    pcap_close(handle);
+                    handle = NULL;
+                    break;
+                }
+                
+                int pcap_fd = pcap_get_selectable_fd(handle);
+                if (pcap_fd == -1) {
+                    fprintf(stderr, "Error: pcap file descriptor not available\n");
+                    pcap_close(handle);
+                    handle = NULL;
+                    break;
+                }
+                
+                // Main sniffing loop using select()
+                while (!stop_sniffing) {
+                    fd_set readfds;
+                    FD_ZERO(&readfds);
+                    FD_SET(STDIN_FILENO, &readfds);
+                    FD_SET(pcap_fd, &readfds);
+                    
+                    struct timeval timeout;
+                    timeout.tv_sec = 0;
+                    timeout.tv_usec = 100000; // 100ms timeout
+                    
+                    int max_fd = (pcap_fd > STDIN_FILENO) ? pcap_fd : STDIN_FILENO;
+                    int ret = select(max_fd + 1, &readfds, NULL, NULL, &timeout);
+                    
+                    if (ret == -1) {
+                        if (!stop_sniffing) {
+                            perror("select");
+                        }
+                        break;
+                    }
+                    
+                    // Check if stdin has input (Ctrl+D will cause EOF)
+                    if (FD_ISSET(STDIN_FILENO, &readfds)) {
+                        char c;
+                        int n = read(STDIN_FILENO, &c, 1);
+                        if (n == 0) {
+                            // EOF detected (Ctrl+D)
+                            printf("\n[C-Shark] EOF detected, stopping capture...\n");
+                            stop_sniffing = 1;
+                            pcap_close(handle);
+                            handle = NULL;
+                            free(dev_name);
+                            return 0;
+                        }
+                    }
+                    
+                    // Check if pcap has packets
+                    if (FD_ISSET(pcap_fd, &readfds)) {
+                        pcap_dispatch(handle, -1, packet_handler, NULL);
+                    }
+                }
+                
                 pcap_close(handle);
                 handle = NULL;
                 break;
