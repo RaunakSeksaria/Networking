@@ -1,3 +1,4 @@
+// ############## LLM Generated Code Begins ##############
 #ifndef SESSION_H
 #define SESSION_H
 
@@ -31,3 +32,4 @@ void session_print_summary();
 void session_inspect();
 
 #endif // SESSION_H
+// ############## LLM Generated Code Ends ################

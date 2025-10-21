@@ -1,3 +1,4 @@
+// ############## LLM Generated Code Begins ##############
 #ifndef UTILS_H
 #define UTILS_H
 
@@ -16,3 +17,4 @@ void print_hex_dump(const unsigned char *data, int len);
 PortInfo identify_port(uint16_t port);
 
 #endif // UTILS_H
+// ############## LLM Generated Code Ends ################

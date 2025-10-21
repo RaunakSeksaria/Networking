@@ -1,3 +1,5 @@
+// ############## LLM Generated Code Begins ##############
+
 #ifndef DECODE_H
 #define DECODE_H
 
@@ -8,3 +10,4 @@ void decode_packet_detailed(const struct pcap_pkthdr *pkthdr, const unsigned cha
 void reset_packet_id();
 
 #endif // DECODE_H
+// ############## LLM Generated Code Ends ################
