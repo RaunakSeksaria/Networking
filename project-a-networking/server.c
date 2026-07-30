@@ -400,14 +400,14 @@ void file_transfer_mode(int sock_fd, struct sockaddr_in *client_addr, socklen_t 
                         expected_seq = receiver_state.next_expected_seq;
                     }
                     
-                    // Simulate consuming data from buffer for flow control
-                    if (receiver_state.buffer_used >= DATA_CHUNK_SIZE) {
-                        size_t consumed = DATA_CHUNK_SIZE / 2;
-                        memmove(receiver_state.receive_buffer, 
-                               receiver_state.receive_buffer + consumed,
-                               receiver_state.buffer_used - consumed);
-                        receiver_state.buffer_used -= consumed;
-                        printf("Flow Control: Consumed %zu bytes, buffer now %zu/%d\n", 
+                    // Everything in the buffer has already been written to the
+                    // file above, so the application has consumed it. Release
+                    // the whole buffer, otherwise the advertised window shrinks
+                    // below one chunk and the sender blocks permanently.
+                    if (receiver_state.buffer_used > 0) {
+                        size_t consumed = receiver_state.buffer_used;
+                        receiver_state.buffer_used = 0;
+                        printf("Flow Control: Consumed %zu bytes, buffer now %zu/%d\n",
                                consumed, receiver_state.buffer_used, RECEIVE_BUFFER_SIZE);
                     }
                 }
