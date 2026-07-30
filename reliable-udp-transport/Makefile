@@ -5,13 +5,13 @@ LDFLAGS = -lm
 # Source files
 SRC_CLIENT = client.c
 SRC_SERVER = server.c
-SRC_COMMON = logging.c
+SRC_COMMON = sham.c
 HDR = sham.h
 
 # Object files
 OBJ_CLIENT = client.o
 OBJ_SERVER = server.o
-OBJ_COMMON = logging.o
+OBJ_COMMON = sham.o
 
 # Executables
 CLIENT = client

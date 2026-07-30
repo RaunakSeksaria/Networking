@@ -25,34 +25,34 @@ re: clean all
 
 # Traffic generators for manual testing. Run one of these in a second terminal
 # while `sudo ./cshark` is capturing, then compare against Wireshark.
-.PHONY: test test-phase1 test-phase2 test-phase3 test-phase4 test-phase5 test-filters test-robustness
+.PHONY: test test-basic test-l2-l3 test-l4 test-payload test-mixed test-filters test-robustness
 
 test:
 	@echo "Traffic generators (run while cshark is capturing):"
-	@echo "  make test-phase1      # basic capture traffic"
-	@echo "  make test-phase2      # L2/L3 traffic (IPv4/IPv6/ARP)"
-	@echo "  make test-phase3      # L4 traffic (TCP/UDP)"
-	@echo "  make test-phase4      # payload traffic (HTTP/HTTPS/DNS)"
-	@echo "  make test-phase5      # mixed session traffic"
+	@echo "  make test-basic       # ping and HTTP HEAD"
+	@echo "  make test-l2-l3       # IPv4, IPv6, and ARP"
+	@echo "  make test-l4          # TCP and UDP"
+	@echo "  make test-payload     # HTTP, HTTPS, and DNS payloads"
+	@echo "  make test-mixed       # combined session traffic"
 	@echo "  make test-filters     # per-protocol traffic for filters"
 	@echo "  make test-robustness  # edge-case traffic"
 	@echo ""
 	@echo "Optional env: IFACE=<real interface>, GATEWAY=<ipv4 gateway>"
 
-test-phase1:
-	@bash tests/phase1.sh
+test-basic:
+	@bash tests/basic.sh
 
-test-phase2:
-	@bash tests/phase2.sh
+test-l2-l3:
+	@bash tests/l2-l3.sh
 
-test-phase3:
-	@bash tests/phase3.sh
+test-l4:
+	@bash tests/l4.sh
 
-test-phase4:
-	@bash tests/phase4.sh
+test-payload:
+	@bash tests/payload.sh
 
-test-phase5:
-	@bash tests/phase5.sh
+test-mixed:
+	@bash tests/mixed.sh
 
 test-filters:
 	@bash tests/filters.sh

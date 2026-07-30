@@ -3,7 +3,7 @@
 ## Build Instructions
 
 ```bash
-cd project-b-networking
+cd packet-sniffer
 make
 ```
 
