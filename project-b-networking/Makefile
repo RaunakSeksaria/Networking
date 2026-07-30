@@ -1,39 +1,3 @@
-############## LLM Generated Code Begins ################
-
- .DEFAULT_GOAL := all
-## Test harness targets for Part B (traffic generators)
-.PHONY: test-b test-b-phase1 test-b-phase2 test-b-phase3 test-b-phase4 test-b-phase5 test-b-filters test-b-robustness
-
-test-b:
-	@echo "See B/TESTING.md for instructions. Available targets:"
-	@echo "  make -C B test-b-phase1      # basic capture traffic"
-	@echo "  make -C B test-b-phase2      # L2/L3 traffic (IPv4/IPv6/ARP)"
-	@echo "  make -C B test-b-phase3      # L4 traffic (TCP/UDP)"
-	@echo "  make -C B test-b-phase4      # payload traffic (HTTP/HTTPS/DNS)"
-	@echo "  make -C B test-b-phase5      # mixed session traffic"
-	@echo "  make -C B test-b-filters     # per-protocol traffic for filters"
-	@echo "  make -C B test-b-robustness  # edge-case traffic"
-
-test-b-phase1:
-	@bash tests/phase1.sh
-
-test-b-phase2:
-	@bash tests/phase2.sh
-
-test-b-phase3:
-	@bash tests/phase3.sh
-
-test-b-phase4:
-	@bash tests/phase4.sh
-
-test-b-phase5:
-	@bash tests/phase5.sh
-
-test-b-filters:
-	@bash tests/filters.sh
-
-test-b-robustness:
-	@bash tests/robustness.sh
 CC = gcc
 CFLAGS = -Wall -Wextra -O2
 LDFLAGS = -lpcap
@@ -41,6 +5,8 @@ LDFLAGS = -lpcap
 OBJ = main.o sniff.o decode.o util.o session.o
 
 TARGET = cshark
+
+.DEFAULT_GOAL := all
 
 .PHONY: all clean re
 
@@ -57,4 +23,39 @@ clean:
 
 re: clean all
 
-########### LLM Generated Code Ends ################
+# Traffic generators for manual testing. Run one of these in a second terminal
+# while `sudo ./cshark` is capturing, then compare against Wireshark.
+.PHONY: test test-phase1 test-phase2 test-phase3 test-phase4 test-phase5 test-filters test-robustness
+
+test:
+	@echo "Traffic generators (run while cshark is capturing):"
+	@echo "  make test-phase1      # basic capture traffic"
+	@echo "  make test-phase2      # L2/L3 traffic (IPv4/IPv6/ARP)"
+	@echo "  make test-phase3      # L4 traffic (TCP/UDP)"
+	@echo "  make test-phase4      # payload traffic (HTTP/HTTPS/DNS)"
+	@echo "  make test-phase5      # mixed session traffic"
+	@echo "  make test-filters     # per-protocol traffic for filters"
+	@echo "  make test-robustness  # edge-case traffic"
+	@echo ""
+	@echo "Optional env: IFACE=<real interface>, GATEWAY=<ipv4 gateway>"
+
+test-phase1:
+	@bash tests/phase1.sh
+
+test-phase2:
+	@bash tests/phase2.sh
+
+test-phase3:
+	@bash tests/phase3.sh
+
+test-phase4:
+	@bash tests/phase4.sh
+
+test-phase5:
+	@bash tests/phase5.sh
+
+test-filters:
+	@bash tests/filters.sh
+
+test-robustness:
+	@bash tests/robustness.sh

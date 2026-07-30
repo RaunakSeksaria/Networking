@@ -1,6 +1,3 @@
-//############## LLM Generated Code Begins ##############
-
-
 #include "sham.h"
 #include <stdarg.h>
 #include <stdlib.h>
@@ -220,7 +217,7 @@ int send_data_with_retransmission(int sock_fd, const struct sockaddr_in* dest_ad
         if (packet_count == 2 || packet_count == 4) { // Drop 2nd and 4th data packets
             should_drop = 1;
             log_drop_data(seq_num);
-            printf("🔴 SIMULATED PACKET LOSS: SEQ=%u (packet #%d) - not sending\n", seq_num, packet_count);
+            printf("Simulated packet loss: SEQ=%u (packet #%d) - not sending\n", seq_num, packet_count);
         }
     }
     

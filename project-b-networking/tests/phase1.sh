@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Phase 1: Device discovery & basic capture traffic generator
-# Usage: make -C B test-b-phase1
+# Usage: make test-phase1
 # Optional env:
 #   IFACE=wlan0     # real interface (for internet traffic); if unset, script will skip real IF steps
 

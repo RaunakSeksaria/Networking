@@ -1,5 +1,3 @@
-// ############## LLM Generated Code Begins ##############
-
 #include "session.h"
 #include "decode.h"
 #include <stdio.h>
@@ -279,4 +277,3 @@ void session_inspect() {
             break;
     }
 }
-// ############## LLM Generated Code Ends ################

@@ -1,4 +1,3 @@
-// ############## LLM Generated Code Begins ##############
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -159,4 +158,3 @@ int main() {
     session_cleanup();
     return 0;
 }
-// ############## LLM Generated Code Ends ################

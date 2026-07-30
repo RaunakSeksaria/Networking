@@ -1,5 +1,3 @@
-// ############## LLM Generated Code Begins ##############
-
 #include "sham.h"
 #include <stdio.h>
 #include <stdlib.h>

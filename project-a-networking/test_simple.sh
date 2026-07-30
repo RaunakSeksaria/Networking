@@ -25,12 +25,12 @@ sleep 1
 
 # Check if file was received
 if [ -f "received_file.bin" ]; then
-    echo "✓ File transfer successful!"
+    echo "PASS: file transfer successful"
     echo "Received file content:"
     cat received_file.bin
     echo ""
 else
-    echo "✗ File transfer failed - no received file"
+    echo "FAIL: no received file"
 fi
 
 # Clean up

@@ -3,7 +3,7 @@
 ## Build Instructions
 
 ```bash
-cd B/
+cd project-b-networking
 make
 ```
 
