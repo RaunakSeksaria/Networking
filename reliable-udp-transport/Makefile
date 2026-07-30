@@ -47,15 +47,6 @@ clean:
 # Rebuild everything
 re: clean all
 
-# Install (copy to /usr/local/bin)
-install: $(CLIENT) $(SERVER)
-	sudo cp $(CLIENT) /usr/local/bin/
-	sudo cp $(SERVER) /usr/local/bin/
-
-# Uninstall
-uninstall:
-	sudo rm -f /usr/local/bin/$(CLIENT) /usr/local/bin/$(SERVER)
-
 # Run server in background
 run-server: $(SERVER)
 	./$(SERVER) 8080
@@ -63,10 +54,6 @@ run-server: $(SERVER)
 # Run server in chat mode
 run-server-chat: $(SERVER)
 	./$(SERVER) 8080 --chat
-
-# Run server with packet loss
-run-server-loss: $(SERVER)
-	./$(SERVER) 8080 0.1
 
 # Test file transfer
 test-file: $(CLIENT) $(SERVER)
@@ -101,15 +88,12 @@ help:
 	@echo "  server       - Build server only"
 	@echo "  clean        - Remove all build artifacts"
 	@echo "  re           - Clean and rebuild everything"
-	@echo "  install      - Install executables to /usr/local/bin"
-	@echo "  uninstall    - Remove executables from /usr/local/bin"
 	@echo "  run-server   - Run server on port 8080"
 	@echo "  run-server-chat - Run server in chat mode on port 8080"
-	@echo "  run-server-loss - Run server with 10% packet loss"
 	@echo "  test-file    - Test file transfer functionality"
 	@echo "  test-chat    - Test chat functionality"
 	@echo "  debug        - Build with debug symbols"
 	@echo "  help         - Show this help message"
 
-.PHONY: all clean re install uninstall run-server run-server-chat run-server-loss test-file test-chat debug help
+.PHONY: all clean re run-server run-server-chat test-file test-chat debug help
 

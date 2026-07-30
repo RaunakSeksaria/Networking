@@ -1,0 +1,8 @@
+*.o
+client
+server
+client_log.txt
+server_log.txt
+received_file.bin
+test_input.txt
+test_output.txt

@@ -24,6 +24,7 @@ void reset_packet_id() {
 }
 
 void decode_packet(unsigned char *user, const struct pcap_pkthdr *pkthdr, const unsigned char *packet) {
+    (void)user;
     printf("-----------------------------------------\n");
     printf("Packet #%lu | Timestamp: %ld.%06ld | Length: %u bytes\n",
            packet_id++, pkthdr->ts.tv_sec, pkthdr->ts.tv_usec, pkthdr->caplen);
