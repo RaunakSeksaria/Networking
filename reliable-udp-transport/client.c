@@ -10,9 +10,6 @@
 #include <signal.h>
 #include <stdarg.h>
 
-
-
-// Global variables for signal handling
 static int client_running = 1;
 
 void signal_handler(int sig) {
@@ -22,7 +19,6 @@ void signal_handler(int sig) {
     }
 }
 
-// Client configuration
 typedef struct {
     char *server_ip;
     int server_port;
@@ -32,7 +28,6 @@ typedef struct {
     float loss_rate;
 } client_config;
 
-// Parse command line arguments
 client_config parse_arguments(int argc, char *argv[]) {
     client_config cfg = {0};
 
@@ -60,7 +55,6 @@ client_config parse_arguments(int argc, char *argv[]) {
     return cfg;
 }
 
-// Setup client socket
 int setup_socket(struct sockaddr_in *server_addr, client_config cfg) {
     int sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock_fd < 0) {
@@ -76,7 +70,6 @@ int setup_socket(struct sockaddr_in *server_addr, client_config cfg) {
     return sock_fd;
 }
 
-// Perform three-way handshake
 int perform_handshake(int sock_fd, struct sockaddr_in *server_addr, socklen_t *addr_len,
                      uint32_t *client_seq, uint32_t *server_seq) {
     *client_seq = 500; // Our initial sequence number
@@ -175,7 +168,6 @@ void perform_fin_handshake(int sock_fd, struct sockaddr_in *server_addr, socklen
     }
 }
 
-// Chat mode implementation
 void chat_mode(int sock_fd, struct sockaddr_in *server_addr, socklen_t addr_len, uint32_t seq_num) {
     fd_set fds;
     char data_buffer[DATA_CHUNK_SIZE];
@@ -207,7 +199,6 @@ void chat_mode(int sock_fd, struct sockaddr_in *server_addr, socklen_t addr_len,
                 break;
             }
 
-            // Send message
             struct sham_header msg_hdr = {
                 .seq_num = seq_num,
                 .ack_num = 0,
@@ -269,7 +260,6 @@ void chat_mode(int sock_fd, struct sockaddr_in *server_addr, socklen_t addr_len,
     }
 }
 
-// File transfer mode implementation with flow control
 void file_transfer_mode(int sock_fd, struct sockaddr_in *server_addr, socklen_t addr_len, 
                        const char* input_file, const char* output_file, uint32_t seq_num) {
     FILE *fp = fopen(input_file, "rb");
@@ -283,7 +273,6 @@ void file_transfer_mode(int sock_fd, struct sockaddr_in *server_addr, socklen_t 
     size_t total_sent = 0;
     sender_state_t sender_state;
     
-    // Initialize flow control state
     init_sender_state(&sender_state, seq_num);
 
     printf("File transfer mode with flow control. Sending file '%s' as '%s'...\n", input_file, output_file);
@@ -307,7 +296,6 @@ void file_transfer_mode(int sock_fd, struct sockaddr_in *server_addr, socklen_t 
     log_snd_data(seq_num, strlen(output_file));
     sender_state.last_byte_sent += strlen(output_file);
     
-    // Wait for ACK
     int len = recv_sham_packet(sock_fd, server_addr, &addr_len, &header, buffer, sizeof(buffer));
         if (len >= 0) {
         print_sham_header("RCV", &header);
@@ -319,7 +307,6 @@ void file_transfer_mode(int sock_fd, struct sockaddr_in *server_addr, socklen_t 
     
     seq_num += strlen(output_file);
 
-    // New sliding window file transfer with retransmission
     int eof_reached = 0;
     char file_buffer[DATA_CHUNK_SIZE];
     
@@ -328,7 +315,6 @@ void file_transfer_mode(int sock_fd, struct sockaddr_in *server_addr, socklen_t 
         if (!eof_reached && sender_state.next_seq_num - sender_state.window_base < SLIDING_WINDOW_SIZE) {
             size_t bytes_read = fread(file_buffer, 1, DATA_CHUNK_SIZE, fp);
             if (bytes_read > 0) {
-                // Check flow control
                 if (can_send_data(&sender_state, bytes_read)) {
                     int result = send_data_with_retransmission(sock_fd, server_addr, &sender_state, 
                                                              seq_num, file_buffer, bytes_read);
@@ -349,7 +335,6 @@ void file_transfer_mode(int sock_fd, struct sockaddr_in *server_addr, socklen_t 
             }
         }
         
-        // Check for timeouts and retransmit
         check_timeouts_and_retransmit(sock_fd, server_addr, &sender_state);
         
         // Try to receive ACKs (non-blocking)
@@ -385,12 +370,10 @@ void file_transfer_mode(int sock_fd, struct sockaddr_in *server_addr, socklen_t 
     printf("File transfer completed. Total bytes sent: %zu\n", total_sent);
 }
 
-// Main function
 int main(int argc, char *argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
     
-    // Initialize logging
     init_logging("client");
     
     client_config cfg = parse_arguments(argc, argv);

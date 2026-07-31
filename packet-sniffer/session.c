@@ -42,7 +42,6 @@ void session_start_new(const char *interface, const char *filter) {
     // Reset packet ID counter for new session
     reset_packet_id();
     
-    // Initialize new session
     current_session.packets = malloc(MAX_PACKETS * sizeof(stored_packet_t));
     if (!current_session.packets) {
         fprintf(stderr, "Error: Failed to allocate memory for packet storage\n");
@@ -72,7 +71,6 @@ int session_add_packet(const unsigned char *data, unsigned int length, struct ti
         return -1;
     }
     
-    // Allocate memory for packet data
     unsigned char *packet_copy = malloc(length);
     if (!packet_copy) {
         fprintf(stderr, "Error: Failed to allocate memory for packet\n");
@@ -120,7 +118,6 @@ void session_print_summary() {
     printf("============================================================\n\n");
 }
 
-// Helper function to get basic packet info
 static void get_packet_info(const unsigned char *packet, unsigned int length, 
                             char *proto, char *src, char *dst) {
     if (length < sizeof(struct ether_header)) {

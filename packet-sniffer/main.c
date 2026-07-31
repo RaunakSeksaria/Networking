@@ -7,7 +7,6 @@
 #include "session.h"
 
 int main() {
-    // Initialize session management
     session_init();
     
     printf("[C-Shark] The Command-Line Packet Predator\n");

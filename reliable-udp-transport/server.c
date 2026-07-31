@@ -9,8 +9,6 @@
 #include <signal.h>
 #include <stdarg.h>
 
-
-// Global variables for signal handling
 static int server_running = 1;
 
 void signal_handler(int sig) {
@@ -20,14 +18,12 @@ void signal_handler(int sig) {
     }
 }
 
-// Server configuration
 typedef struct {
     int port;
     int chat_mode;
     float loss_rate;
 } server_config;
 
-// Parse command line arguments
 server_config parse_arguments(int argc, char *argv[]) {
     server_config cfg = {0};
 
@@ -47,7 +43,6 @@ server_config parse_arguments(int argc, char *argv[]) {
     return cfg;
 }
 
-// Setup server socket
 int setup_server_socket(int port) {
     int sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock_fd < 0) {
@@ -70,7 +65,6 @@ int setup_server_socket(int port) {
     return sock_fd;
 }
 
-// Perform three-way handshake
 int perform_handshake(int sock_fd, struct sockaddr_in *client_addr, socklen_t *client_addr_len,
                      uint32_t *server_seq, uint32_t *client_seq) {
     struct sham_header header;
@@ -165,7 +159,6 @@ void handle_fin_handshake(int sock_fd, struct sockaddr_in *client_addr,
     }
 }
 
-// Chat mode implementation
 void chat_mode(int sock_fd, struct sockaddr_in *client_addr, socklen_t client_addr_len,
                uint32_t server_seq, uint32_t client_seq) {
     (void)client_seq; // Suppress unused parameter warning
@@ -208,7 +201,6 @@ void chat_mode(int sock_fd, struct sockaddr_in *client_addr, socklen_t client_ad
                 break;
             }
 
-            // Send message
             struct sham_header msg_hdr = {
                 .seq_num = server_seq,
                 .ack_num = 0,
@@ -239,7 +231,6 @@ void chat_mode(int sock_fd, struct sockaddr_in *client_addr, socklen_t client_ad
     }
 }
 
-// File transfer mode implementation with flow control
 void file_transfer_mode(int sock_fd, struct sockaddr_in *client_addr, socklen_t client_addr_len,
                        uint32_t server_seq, uint32_t expected_seq) {
     struct sham_header header;
@@ -248,7 +239,6 @@ void file_transfer_mode(int sock_fd, struct sockaddr_in *client_addr, socklen_t 
     socklen_t addr_len = client_addr_len;
     receiver_state_t receiver_state;
     
-    // Initialize flow control state
     init_receiver_state(&receiver_state, expected_seq);
 
     printf("File transfer mode with flow control. Receiving file...\n");
@@ -266,7 +256,6 @@ void file_transfer_mode(int sock_fd, struct sockaddr_in *client_addr, socklen_t 
     log_rcv_data(header.seq_num, filename_len);
     printf("Receiving file as: %s\n", filename);
     
-    // Process filename with flow control
     if (process_received_data(&receiver_state, header.seq_num, filename, filename_len)) {
         expected_seq += filename_len;
     }
@@ -370,12 +359,10 @@ void file_transfer_mode(int sock_fd, struct sockaddr_in *client_addr, socklen_t 
     printf("File transfer completed. Saved as '%s'\n", filename);
 }
 
-// Main function
 int main(int argc, char *argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
     
-    // Initialize logging
     init_logging("server");
     
     server_config cfg = parse_arguments(argc, argv);

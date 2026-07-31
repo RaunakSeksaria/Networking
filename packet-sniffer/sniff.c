@@ -21,10 +21,8 @@ static void sigint_handler(int sig) {
 
 // Wrapper callback that stores packets and decodes them
 static void packet_handler_with_storage(unsigned char *user, const struct pcap_pkthdr *pkthdr, const unsigned char *packet) {
-    // Store packet in session
     session_add_packet(packet, pkthdr->caplen, pkthdr->ts);
     
-    // Decode and display packet
     decode_packet(user, pkthdr, packet);
 }
 
@@ -35,7 +33,6 @@ static int sniff_loop(pcap_t *handle, const char *dev_name) {
         return -1;
     }
 
-    // setup signal
     signal(SIGINT, sigint_handler);
     g_handle = handle;
     stop_flag = 0;
@@ -87,7 +84,6 @@ static int sniff_loop(pcap_t *handle, const char *dev_name) {
 int start_sniff(const char *dev_name) {
     char errbuf[PCAP_ERRBUF_SIZE];
     
-    // Start new session
     session_start_new(dev_name, NULL);
     
     pcap_t *handle = pcap_open_live(dev_name, BUFSIZ, 1, 1000, errbuf);
@@ -110,7 +106,6 @@ int start_sniff(const char *dev_name) {
 int start_sniff_filtered(const char *dev_name, const char *filter) {
     char errbuf[PCAP_ERRBUF_SIZE];
     
-    // Start new session with filter
     session_start_new(dev_name, filter);
     
     pcap_t *handle = pcap_open_live(dev_name, BUFSIZ, 1, 1000, errbuf);

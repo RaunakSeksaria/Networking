@@ -74,11 +74,10 @@ int recv_sham_packet(int sock_fd, struct sockaddr_in* src_addr, socklen_t* src_a
     return (int)data_len;
 }
 
-// Global logging state
 FILE* log_file = NULL;
 int logging_enabled = 0;
 
-// Flow control function implementations
+// Flow control
 void init_sender_state(sender_state_t* state, uint32_t initial_seq) {
     state->last_byte_sent = initial_seq;
     state->last_byte_acked = initial_seq;
@@ -141,7 +140,7 @@ int process_received_data(receiver_state_t* state, uint32_t seq_num, const void*
     return 1; // Successfully processed
 }
 
-// Logging function implementations
+// Logging
 void init_logging(const char* program_name) {
     const char* rudp_log = getenv("RUDP_LOG");
     if (rudp_log && strcmp(rudp_log, "1") == 0) {
@@ -246,7 +245,7 @@ void log_snd_ack_for_fin(void) {
     log_event("SND ACK FOR FIN");
 }
 
-// Retransmission function implementations
+// Retransmission and sliding window
 long get_time_diff_ms(const struct timeval* start, const struct timeval* end) {
     return (end->tv_sec - start->tv_sec) * 1000 + (end->tv_usec - start->tv_usec) / 1000;
 }
@@ -262,7 +261,6 @@ int send_data_with_retransmission(int sock_fd, const struct sockaddr_in* dest_ad
     int slot = state->next_seq_num % SLIDING_WINDOW_SIZE;
     packet_info_t* packet = &state->sliding_window[slot];
     
-    // Store packet information
     packet->seq_num = seq_num;
     packet->data_len = data_len;
     memcpy(packet->data, data, data_len);
@@ -270,7 +268,6 @@ int send_data_with_retransmission(int sock_fd, const struct sockaddr_in* dest_ad
     packet->retry_count = 0;
     packet->acked = 0;
     
-    // Send the packet
     struct sham_header header = {
         .seq_num = seq_num,
         .ack_num = 0,
@@ -378,7 +375,6 @@ int buffer_out_of_order_packet(receiver_state_t* state, uint32_t seq_num, const 
         }
     }
     
-    // Add to buffer
     buffered_packet_t* buffered = &state->out_of_order_buffer[state->buffered_count];
     buffered->seq_num = seq_num;
     buffered->data_len = data_len;
