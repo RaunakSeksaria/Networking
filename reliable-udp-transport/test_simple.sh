@@ -1,40 +1,44 @@
 #!/bin/bash
+# End to end file transfer over loopback. Starts its own server, sends a file,
+# and checks that what arrived matches what was sent.
 
-echo "Testing networking2 implementation..."
+set -u
 
-# Clean up any existing processes
-pkill -f server 2>/dev/null || true
-pkill -f client 2>/dev/null || true
-sleep 1
+PORT=8080
+INPUT=test_input.txt
+OUTPUT=test_output.txt
 
-# Create test file
-echo "Hello, World! This is a test file for networking2." > test_input.txt
+cleanup() {
+    [ -n "${SERVER_PID:-}" ] && kill "$SERVER_PID" 2>/dev/null
+    rm -f "$INPUT" "$OUTPUT"
+}
+trap cleanup EXIT
 
-# Start server in background
-echo "Starting server..."
-./server 8080 &
+echo "Building..."
+make >/dev/null || { echo "FAIL: build error"; exit 1; }
+
+echo "Hello, World! This is a test file for the reliable UDP transport." > "$INPUT"
+
+echo "Starting server on port $PORT..."
+./server "$PORT" >/dev/null 2>&1 &
 SERVER_PID=$!
-sleep 2
-
-# Test file transfer
-echo "Testing file transfer..."
-./client 127.0.0.1 8080 test_input.txt test_output.txt
-
-# Wait a moment
 sleep 1
 
-# Check if file was received
-if [ -f "received_file.bin" ]; then
-    echo "PASS: file transfer successful"
-    echo "Received file content:"
-    cat received_file.bin
-    echo ""
-else
-    echo "FAIL: no received file"
+echo "Transferring $INPUT as $OUTPUT..."
+./client 127.0.0.1 "$PORT" "$INPUT" "$OUTPUT" >/dev/null 2>&1
+sleep 1
+
+if [ ! -f "$OUTPUT" ]; then
+    echo "FAIL: server did not produce $OUTPUT"
+    exit 1
 fi
 
-# Clean up
-kill $SERVER_PID 2>/dev/null || true
-rm -f test_input.txt test_output.txt received_file.bin
-
-echo "Test completed."
+if cmp -s "$INPUT" "$OUTPUT"; then
+    echo "PASS: received file is identical to the one sent ($(stat -c%s "$OUTPUT") bytes)"
+    exit 0
+else
+    echo "FAIL: received file differs from the one sent"
+    echo "  sent:     $(stat -c%s "$INPUT") bytes"
+    echo "  received: $(stat -c%s "$OUTPUT") bytes"
+    exit 1
+fi
